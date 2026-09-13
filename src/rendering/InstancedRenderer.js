@@ -382,11 +382,8 @@ export class InstancedRenderer {
       this.arrowMesh.visible = pzSpeed > 0.15;
 
       if (entityManager.isTitan && entityManager.titanVirusTimer > 0) {
-        this.titanRing.visible = true;
-        this.titanRing.position.y = 2.4 * pzScale;
-        const ringScale = pzScale * 0.95;
-        this.titanRing.scale.set(ringScale, ringScale, ringScale);
-        this.titanRing.material.opacity = 0.75 + Math.sin(time * 12.0) * 0.2;
+        // Geometric purple ring graphic eliminated per designer & artist requirements
+        this.titanRing.visible = false;
         this.beaconBeam.visible = true;
         this.beaconBeam.material.opacity = 0.45;
         this.beaconBeam.material.color.setHex(0xa855f7);

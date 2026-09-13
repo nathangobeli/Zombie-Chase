@@ -77,7 +77,53 @@ async function runPlaytest() {
     });
     console.log('[Playtest] Boot lifecycle check (STATE_MENU):', bootMenuCheck);
 
-    // 1b. Test clicking "START OUTBREAK" button to transition from STATE_MENU to STATE_PLAYING
+    // 1a. QA Check: Viewport Pinch-Zoom Lock & Touch-Action
+    console.log('[Playtest] Checking viewport lock & touch-action settings...');
+    const viewportTouchCheck = await page.evaluate(() => {
+      const meta = document.querySelector('meta[name="viewport"]');
+      const metaContent = meta ? meta.getAttribute('content') : '';
+      const bodyTouchAction = getComputedStyle(document.body).touchAction;
+      const container = document.getElementById('game-container');
+      const containerTouchAction = container ? getComputedStyle(container).touchAction : '';
+      const isUserScalableNo = metaContent.includes('user-scalable=no');
+      const isMaxScale1 = metaContent.includes('maximum-scale=1.0');
+      return {
+        hasViewportLock: isUserScalableNo && isMaxScale1,
+        bodyTouchActionNone: bodyTouchAction === 'none',
+        containerTouchActionNone: containerTouchAction === 'none',
+      };
+    });
+    console.log('[Playtest] Viewport & touch lock check:', viewportTouchCheck);
+
+    // 1b. QA Check: How-to-Play / Rules Modal Open & Close
+    console.log('[Playtest] Testing How-to-Play Rules modal flow...');
+    await page.evaluate(() => {
+      document.getElementById('btn-menu-rules')?.click();
+    });
+    await page.waitForTimeout(200);
+
+    const rulesModalOpen = await page.evaluate(() => {
+      const modal = document.getElementById('rules-modal');
+      return modal && getComputedStyle(modal).display !== 'none' && !modal.classList.contains('hidden');
+    });
+
+    await page.evaluate(() => {
+      document.getElementById('btn-close-rules')?.click();
+    });
+    await page.waitForTimeout(200);
+
+    const rulesModalClosed = await page.evaluate(() => {
+      const modal = document.getElementById('rules-modal');
+      return !modal || getComputedStyle(modal).display === 'none' || modal.classList.contains('hidden');
+    });
+
+    const rulesModalCheck = {
+      modalOpened: !!rulesModalOpen,
+      modalClosed: !!rulesModalClosed,
+    };
+    console.log('[Playtest] How-to-Play modal check:', rulesModalCheck);
+
+    // 1c. Test clicking "START OUTBREAK" button to transition from STATE_MENU to STATE_PLAYING
     console.log('[Playtest] Clicking START OUTBREAK button to launch game...');
     await page.evaluate(() => {
       document.getElementById('btn-start-game')?.click();
@@ -85,6 +131,36 @@ async function runPlaytest() {
 
     await page.waitForFunction(() => !!(window.__GAME_STATE__?.gameState === 'STATE_PLAYING' && window.__GAME_APP__?.entityManager?.patientZero), null, { timeout: 35000 });
     await page.waitForTimeout(600);
+
+    // 1d. QA Check: Debug buttons absent from active gameplay canvas (inside collapsed drawer)
+    const debugDrawerCheck = await page.evaluate(() => {
+      const drawer = document.getElementById('debug-drawer');
+      const isCollapsed = drawer && drawer.classList.contains('collapsed');
+      const panel = drawer ? drawer.querySelector('.debug-drawer-panel') : null;
+      const panelDisplayNone = panel ? getComputedStyle(panel).display === 'none' : true;
+      return {
+        drawerFound: !!drawer,
+        isCollapsed: !!isCollapsed,
+        panelHidden: panelDisplayNone,
+      };
+    });
+    console.log('[Playtest] Active gameplay debug buttons absence check:', debugDrawerCheck);
+
+    // 1e. QA Check: Swarm de-clustering & boid separation distance parameter
+    const boidSeparationCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const bc = app?.entityManager?.boidController;
+      const sepRadius = bc?.separationRadius || 0;
+      const sepWeight = bc?.weightSeparation || 0;
+      const cohWeight = bc?.weightCohesion || 0;
+      return {
+        separationRadius: sepRadius,
+        weightSeparation: sepWeight,
+        weightCohesion: cohWeight,
+        holdsGreaterDistance: sepRadius >= 1.4 && sepWeight > cohWeight,
+      };
+    });
+    console.log('[Playtest] Swarm de-clustering separation parameter check:', boidSeparationCheck);
 
     const initialCheck = await page.evaluate(() => {
       const app = window.__GAME_APP__;
@@ -955,6 +1031,26 @@ async function runPlaytest() {
 
     if (!modalViewportCheck.fitsViewport) {
       console.error('[Playtest FAILED] Initials entry modal exceeds viewport bounds.');
+      process.exit(1);
+    }
+
+    if (!viewportTouchCheck.hasViewportLock || !viewportTouchCheck.bodyTouchActionNone) {
+      console.error('[Playtest FAILED] Viewport scaling lock or touch-action: none assertion failed:', viewportTouchCheck);
+      process.exit(1);
+    }
+
+    if (!rulesModalCheck.modalOpened || !rulesModalCheck.modalClosed) {
+      console.error('[Playtest FAILED] How-to-Play Rules modal failed to open and close cleanly:', rulesModalCheck);
+      process.exit(1);
+    }
+
+    if (!debugDrawerCheck.isCollapsed || !debugDrawerCheck.panelHidden) {
+      console.error('[Playtest FAILED] Debug buttons are not hidden/collapsed on active gameplay canvas:', debugDrawerCheck);
+      process.exit(1);
+    }
+
+    if (!boidSeparationCheck.holdsGreaterDistance) {
+      console.error('[Playtest FAILED] Boid separation parameter does not hold greater average distance:', boidSeparationCheck);
       process.exit(1);
     }
 

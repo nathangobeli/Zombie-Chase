@@ -3,10 +3,10 @@ import * as THREE from 'three';
 export class CameraController {
   constructor(camera, options = {}) {
     this.camera = camera;
-    this.baseHeight = options.baseHeight ?? 18.0;
+    this.baseHeight = options.baseHeight ?? 22.5;
     this.k = options.k ?? 1.35; // Height scaling factor for sqrt(HordeCount)
-    this.minHeight = 16.0;
-    this.maxHeight = 52.0;
+    this.minHeight = 19.5;
+    this.maxHeight = 60.0;
 
     // Camera pitch offset ratio (z-offset relative to height)
     this.pitchOffsetRatio = 0.42;

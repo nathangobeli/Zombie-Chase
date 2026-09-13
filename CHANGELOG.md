@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-09-13 — "Mobile Optimization, Swarm Spacing, UI Polish & PWA Biohazard Assets"
+
+### Added — Mobile Viewport & PWA Assets (@artist & @designer)
+- **Viewport Lock & Gesture Defense** (`index.html`, `style.css`):
+  - Locked mobile viewport scaling with `<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />`.
+  - Applied `touch-action: none;` and `user-select: none;` across `html`, `body`, `#game-container`, and `#canvas-container` to permanently prevent iOS/Android double-tap zoom and pinch-to-zoom gestures.
+- **PWA Biohazard Icon Suite & Manifest** (`public/`, `index.html`):
+  - Generated and installed crisp, stylized biohazard emblem app icons: `public/icon-192.png` (192x192), `public/icon-512.png` (512x512), and `public/apple-touch-icon.png` (180x180).
+  - Created `public/manifest.json` configured for standalone portrait gameplay with `#0f172a` background and `#22c55e` toxic green theme color.
+  - Linked manifest and apple touch icons inside `index.html`.
+
+### Changed — Camera Framing & Swarm Flocking Spacing (@designer & @artist)
+- **Expansive Situational Camera Framing** (`CameraController.js`, `main.js`):
+  - Increased base camera height by 25% (18.0 -> 22.5m, minHeight 16.0 -> 19.5m) and field of view by 22% (desktop FOV 36 -> 44, mobile portrait FOV 50 -> 58) for superior situational awareness of city avenues and surrounding cross-street traffic.
+- **Swarm De-Clustering & Boid Separation** (`Boids.js`, `EntityManager.js`):
+  - Increased flocking separation radius from 1.4m to 1.5m (`separationRadius: 1.5`).
+  - Increased separation force weighting relative to cohesion (`weightSeparation: 4.4`, `weightCohesion: 0.9`), ensuring horde members maintain distinct individual silhouettes rather than collapsing into a merged blob.
+- **Titan Colossal Ring Removal** (`InstancedRenderer.js`):
+  - Removed the geometric purple ring graphic displayed during Titan Colossal mode while retaining the 3.0x character scale expansion, stomping footsteps, and particle shockwaves.
+
+### Added — In-Game HUD Cleanup & Apocalyptic Menu Theming (@artist & @designer)
+- **Streamlined Mobile In-Game HUD** (`index.html`, `style.css`):
+  - Removed permanent bottom-left control instructions box (`.controls-hint`) to free up critical touch real estate for movement.
+  - Relocated developer/cheat buttons into a collapsible debug drawer (`#debug-drawer`) toggleable via a small wrench icon button (`#btn-toggle-debug`), keeping the active gameplay canvas clean.
+  - Prominently retained essential gameplay telemetry: Swarm Size, City Panic meter (with reactive progress bar), and current Score.
+- **How-to-Play / Game Rules Modal** (`index.html`, `style.css`, `main.js`):
+  - Added stylized "📖 HOW TO PLAY / RULES" button to the Main Menu.
+  - Built comprehensive modal overlay (`#rules-modal`) detailing touch joystick steering, swarm squeeze, infection combos, Hazmat disinfectant mist, and power-up canisters with a stylized close button.
+- **Apocalyptic Zombie Arcade Theme Overhaul** (`style.css`):
+  - Re-themed Main Menu and Game Over screens with dark decayed slate backgrounds (`#0f172a` / `#090d16`), toxic lime borders (`#22c55e`), blood crimson accents (`#dc2626`), glowing neon-green button states, and grungy hazard stripes (`.hazard-stripes-bar`, `.hazard-stripes-crimson`).
+
+### Verified — Automated QA Validation (@qa)
+- **Headless Playtest Suite** (`scripts/playtest.js`):
+  - Validated zero viewport scaling gestures and strict `touch-action: none` styling in mobile contexts.
+  - Verified boid separation parameters maintain >= 1.4m separation distance.
+  - Confirmed debug buttons are hidden inside the collapsed drawer during active gameplay.
+  - Verified How-to-Play modal opens and closes cleanly without runtime errors.
+  - All 35+ game state assertions passed cleanly with 0 errors.
+
+---
+
 ## [2.7.0] - 2026-09-13 — "City Lighting Overhaul, Dynamic Proximity Lights & Traffic Signals"
 
 ### Added — Aesthetic & Lighting Overhaul (@artist & @designer)

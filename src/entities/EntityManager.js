@@ -4,7 +4,12 @@ import { BoidController } from '../ai/Boids.js';
 export class EntityManager {
   constructor(arenaRadius = Infinity) {
     this.arenaRadius = arenaRadius;
-    this.boidController = new BoidController({ arenaRadius });
+    this.boidController = new BoidController({
+      arenaRadius,
+      separationRadius: 1.5,
+      weightSeparation: 4.4,
+      weightCohesion: 0.9
+    });
     this.cityStreamer = null;
 
     // Entities

@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Zombie Chase — 3D Swarm Reverse-Bullet-Hell</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -19,7 +21,7 @@
         <div id="joystick-thumb" class="joystick-thumb"></div>
       </div>
 
-      <!-- Top HUD Header -->
+      <!-- Top HUD Header (Essential Telemetry Only: Swarm, Panic, Score) -->
       <div class="hud-top">
         <div class="hud-card horde-card">
           <div class="card-label">SWARM SIZE</div>
@@ -32,33 +34,89 @@
           </div>
         </div>
 
+        <div class="hud-card panic-card">
+          <div class="card-label">CITY PANIC</div>
+          <div class="card-value-row">
+            <span id="panic-val" class="panic-val">0%</span>
+            <span class="panic-icon">⚠️</span>
+          </div>
+          <div class="panic-progress-bar">
+            <div id="panic-bar-fill" class="panic-bar-fill"></div>
+          </div>
+        </div>
+
         <!-- G1: Score & Combo Display -->
         <div class="hud-card score-card">
           <div class="card-label">SCORE</div>
           <div class="score-value" id="score-val">0</div>
           <div class="combo-display" id="combo-display"></div>
         </div>
+      </div>
 
-        <div class="hud-card stats-card">
-          <div class="stat-item">
-            <span class="stat-name">CIVILIANS</span>
-            <span id="civ-count" class="stat-val">50</span>
+      <!-- Collapsible Developer / Debug Drawer (Hidden during standard runs) -->
+      <div id="debug-drawer" class="debug-drawer collapsed">
+        <button id="btn-toggle-debug" class="debug-toggle-btn" title="Toggle Developer Tools" aria-label="Toggle Developer Tools">
+          <span class="debug-toggle-icon">🔧</span>
+        </button>
+        <div class="debug-drawer-panel">
+          <div class="debug-drawer-header">
+            <span class="debug-title">⚙️ DEV CHEATS &amp; TELEMETRY</span>
           </div>
-          <div class="stat-item">
-            <span class="stat-name">STRAYS</span>
-            <span id="stray-count" class="stat-val">16</span>
+          <div class="debug-telemetry-grid">
+            <div class="stat-item">
+              <span class="stat-name">CIVILIANS</span>
+              <span id="civ-count" class="stat-val">50</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-name">STRAYS</span>
+              <span id="stray-count" class="stat-val">16</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-name">FPS</span>
+              <span id="fps-val" class="stat-val stat-fps">60</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-name">DRAW</span>
+              <span id="draw-calls" class="stat-val stat-fps">-</span>
+            </div>
           </div>
-          <div class="stat-item">
-            <span class="stat-name">PANIC</span>
-            <span id="panic-val" class="stat-val stat-fps">0%</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-name">FPS</span>
-            <span id="fps-val" class="stat-val stat-fps">60</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-name">DRAW</span>
-            <span id="draw-calls" class="stat-val stat-fps">-</span>
+          <div class="debug-btn-grid interactive-hud">
+            <button id="btn-add-civs" class="hud-btn" title="Add 50 Civilians for Swarm Testing">
+              <span class="btn-icon">+50</span>
+              <span class="btn-text">CIVILIANS</span>
+            </button>
+            <button id="btn-spawn-hazmat" class="hud-btn hud-btn-warning" title="Spawn Hazmat Enemy">
+              <span class="btn-icon">⚠️</span>
+              <span class="btn-text">HAZMAT</span>
+            </button>
+            <button id="btn-spawn-military" class="hud-btn hud-btn-warning" title="Spawn Military Riflemen">
+              <span class="btn-icon">🎖️</span>
+              <span class="btn-text">MILITARY</span>
+            </button>
+            <button id="btn-spawn-warden" class="hud-btn" style="background: rgba(249, 115, 22, 0.25); border-color: #f97316;" title="Spawn Megaphone Warden">
+              <span class="btn-icon">📢</span>
+              <span class="btn-text">WARDEN</span>
+            </button>
+            <button id="btn-titan" class="hud-btn" style="background: rgba(168, 85, 247, 0.25); border-color: #a855f7;" title="Activate Titan Virus">
+              <span class="btn-icon">☣️</span>
+              <span class="btn-text">TITAN</span>
+            </button>
+            <button id="btn-view-leaderboard" class="hud-btn" style="background: rgba(250, 204, 21, 0.2); border-color: #facc15;" title="View Leaderboard">
+              <span class="btn-icon">🏆</span>
+              <span class="btn-text">SCORES</span>
+            </button>
+            <button id="btn-ability" class="hud-btn hud-btn-ability" title="Use Unlocked Milestone Ability" style="display:none">
+              <span class="btn-icon">💥</span>
+              <span class="btn-text">BURST</span>
+            </button>
+            <button id="btn-joystick-mode" class="hud-btn hud-btn-subtle" title="Toggle Fixed Joystick">
+              <span class="btn-icon">🕹️</span>
+              <span class="btn-text">FLOAT</span>
+            </button>
+            <button id="btn-reset" class="hud-btn hud-btn-subtle" title="Restart Simulation">
+              <span class="btn-icon">↺</span>
+              <span class="btn-text">RESET</span>
+            </button>
           </div>
         </div>
       </div>
@@ -95,58 +153,8 @@
         <div class="mist-label">DECONTAMINATING</div>
       </div>
 
-      <!-- Quick Action Toolbar (Top-Right / Sub-header) -->
-      <div class="hud-actions interactive-hud">
-        <button id="btn-add-civs" class="hud-btn" title="Add 50 Civilians for Swarm Testing">
-          <span class="btn-icon">+50</span>
-          <span class="btn-text">CIVILIANS</span>
-        </button>
-        <button id="btn-spawn-hazmat" class="hud-btn hud-btn-warning" title="Spawn Hazmat Enemy">
-          <span class="btn-icon">⚠️</span>
-          <span class="btn-text">HAZMAT</span>
-        </button>
-        <button id="btn-spawn-military" class="hud-btn hud-btn-warning" title="Spawn Military Riflemen">
-          <span class="btn-icon">🎖️</span>
-          <span class="btn-text">MILITARY</span>
-        </button>
-        <button id="btn-spawn-warden" class="hud-btn" style="background: rgba(249, 115, 22, 0.25); border-color: #f97316;" title="Spawn Megaphone Warden">
-          <span class="btn-icon">📢</span>
-          <span class="btn-text">WARDEN</span>
-        </button>
-        <button id="btn-titan" class="hud-btn" style="background: rgba(168, 85, 247, 0.25); border-color: #a855f7;" title="Activate Titan Virus">
-          <span class="btn-icon">☣️</span>
-          <span class="btn-text">TITAN</span>
-        </button>
-        <button id="btn-view-leaderboard" class="hud-btn" style="background: rgba(250, 204, 21, 0.2); border-color: #facc15;" title="View Leaderboard">
-          <span class="btn-icon">🏆</span>
-          <span class="btn-text">SCORES</span>
-        </button>
-        <!-- G4: Milestone Ability Button (hidden until unlocked) -->
-        <button id="btn-ability" class="hud-btn hud-btn-ability" title="Use Unlocked Milestone Ability" style="display:none">
-          <span class="btn-icon">💥</span>
-          <span class="btn-text">BURST</span>
-        </button>
-        <!-- C2: Fixed Joystick Toggle -->
-        <button id="btn-joystick-mode" class="hud-btn hud-btn-subtle" title="Toggle Fixed Joystick">
-          <span class="btn-icon">🕹️</span>
-          <span class="btn-text">FLOAT</span>
-        </button>
-        <button id="btn-reset" class="hud-btn hud-btn-subtle" title="Restart Simulation">
-          <span class="btn-icon">↺</span>
-          <span class="btn-text">RESET</span>
-        </button>
-      </div>
-
-      <!-- Bottom HUD: Ability & Instructions -->
+      <!-- Bottom HUD: Action Buttons Only (Controls Hint Removed for Mobile Real Estate) -->
       <div class="hud-bottom">
-        <div class="controls-hint">
-          <div class="hint-row"><span class="hint-key">TOUCH &amp; DRAG</span> / <span class="hint-key">WASD</span> Move Swarm</div>
-          <div class="hint-row"><span class="hint-key">SQUEEZE</span> / <span class="hint-key">C / SHIFT</span> Streamline Horde</div>
-          <div class="hint-row"><span class="hint-key">SWIPE FLICK</span> / <span class="hint-key">E</span> Avatar Transfer</div>
-          <div class="hint-row"><span class="hint-key">FRENZY</span> / <span class="hint-key">SPACE</span> Speed Surge</div>
-        </div>
-
-        <!-- Action Buttons: Squeeze & Frenzy -->
         <div class="action-btn-wrapper interactive-hud">
           <button id="btn-squeeze" class="hud-btn-squeeze" title="Hold to Squeeze Swarm (C / Shift / Pinch)">
             <div class="btn-inner">
@@ -172,6 +180,7 @@
     <!-- Main Menu Overlay (STATE_MENU) -->
     <div id="main-menu-overlay" class="menu-overlay">
       <div class="menu-card">
+        <div class="hazard-stripes-bar"></div>
         <div class="menu-logo-badge">☣️ CONTAGION SIMULATOR</div>
         <h1 class="menu-title">ZOMBIE CHASE</h1>
         <p class="menu-subtitle">INFECT THE CITY • BUILD THE SWARM • OVERRUN THE QUARANTINE</p>
@@ -198,6 +207,7 @@
         <!-- Action CTAs -->
         <div class="menu-actions">
           <button id="btn-start-game" class="menu-btn menu-btn-start">START OUTBREAK ▶</button>
+          <button id="btn-menu-rules" class="menu-btn menu-btn-rules">📖 HOW TO PLAY / RULES</button>
           <button id="btn-menu-leaderboard" class="menu-btn menu-btn-scores">🏆 HIGH SCORES</button>
         </div>
 
@@ -207,19 +217,58 @@
       </div>
     </div>
 
-    <!-- First-Launch Controls Overlay -->
-    <div id="controls-overlay" class="controls-overlay" style="display: none;">
-      <div class="overlay-card">
-        <div class="overlay-title">HOW TO PLAY</div>
-        <div class="overlay-controls">
-          <div class="oc-row"><span class="oc-key">DRAG / WASD</span> Steer Horde &amp; Infect Humans</div>
-          <div class="oc-row"><span class="oc-key">HOLD SQUEEZE / C</span> Streamline Through Tight Alleys</div>
-          <div class="oc-row"><span class="oc-key">TAP FRENZY / SPACE</span> 10s Speed Surge</div>
-          <div class="oc-row"><span class="oc-key">SWIPE FLICK / E</span> Transfer Patient Zero to Forward Zombie</div>
-          <div class="oc-row"><span class="oc-key">AVOID HAZMAT</span> Chemical Spray Cures Swarm &amp; Quarantines</div>
-          <div class="oc-row"><span class="oc-key">INFECT STREAKS</span> Earn Combos &amp; Score</div>
+    <!-- How-to-Play Rules Modal Overlay -->
+    <div id="rules-modal" class="game-rules-modal" style="display: none;">
+      <div class="rules-card">
+        <div class="hazard-stripes-bar"></div>
+        <div class="rules-header">
+          <div class="rules-badge">☣️ SURVIVAL PROTOCOL</div>
+          <h2 class="rules-title">HOW TO PLAY</h2>
         </div>
-        <div class="overlay-dismiss">Tap anywhere to play</div>
+
+        <div class="rules-content">
+          <div class="rule-block">
+            <div class="rule-icon">🕹️</div>
+            <div class="rule-text">
+              <div class="rule-heading">TOUCH &amp; DRAG STEERING</div>
+              <p>Drag anywhere on screen (or use WASD keys) to steer Patient Zero and command the flocking horde through avenues and intersections.</p>
+            </div>
+          </div>
+
+          <div class="rule-block">
+            <div class="rule-icon">🏹</div>
+            <div class="rule-text">
+              <div class="rule-heading">SWARM SQUEEZE &amp; TRANSFER</div>
+              <p>Hold the <strong>SQUEEZE</strong> button (or C / Shift) to compress your horde into a tight spearhead through narrow alleys. Swipe flick (or E) transfers Patient Zero to a forward zombie!</p>
+            </div>
+          </div>
+
+          <div class="rule-block">
+            <div class="rule-icon">🧟</div>
+            <div class="rule-text">
+              <div class="rule-heading">INFECTION &amp; RECRUITMENT</div>
+              <p>Touch civilians to convert them into your horde. Chain rapid infections to rack up combo multipliers, and recruit stray roaming zombies to rebuild numbers.</p>
+            </div>
+          </div>
+
+          <div class="rule-block">
+            <div class="rule-icon">⚠️</div>
+            <div class="rule-text">
+              <div class="rule-heading">HAZMAT CONES &amp; LAST STAND</div>
+              <p>Hazmat spray decontaminates zombies! Horde units shield Patient Zero. If your horde is wiped out, you enter <strong>Last Stand</strong>: infect a civilian before mist or the countdown eliminates you!</p>
+            </div>
+          </div>
+
+          <div class="rule-block">
+            <div class="rule-icon">⚡</div>
+            <div class="rule-text">
+              <div class="rule-heading">POWER-UP CANISTERS</div>
+              <p>Collect street canisters: <strong>⚡ Speed Surge</strong> for hyper-speed, <strong>🧲 Meat Magnet</strong> to vacuum civilians from afar, and <strong>☣️ Titan Virus</strong> for colossal stomping invulnerability!</p>
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-close-rules" class="menu-btn menu-btn-start" style="margin-top: 16px;">CLOSE ✕</button>
       </div>
     </div>
 
@@ -271,6 +320,7 @@
     <!-- Game Over Quarantine & Extermination Modal -->
     <div id="game-over-modal" class="game-over-modal" style="display: none;">
       <div class="game-over-card">
+        <div class="hazard-stripes-bar hazard-stripes-crimson"></div>
         <div class="game-over-icon">☣️</div>
         <div id="game-over-reason" class="game-over-title">QUARANTINED!</div>
         <div id="game-over-desc" class="game-over-desc">Patient Zero was fully decontaminated by Hazmat disinfectant spray.</div>

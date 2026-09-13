@@ -103,6 +103,12 @@ class GameApp {
     this.comboEl = document.getElementById('combo-display');
     this.abilityBtn = document.getElementById('btn-ability');
     this.joystickToggleBtn = document.getElementById('btn-joystick-mode');
+    this.panicBarFill = document.getElementById('panic-bar-fill');
+    this.debugDrawerEl = document.getElementById('debug-drawer');
+    this.btnToggleDebug = document.getElementById('btn-toggle-debug');
+    this.rulesModalEl = document.getElementById('rules-modal');
+    this.btnMenuRules = document.getElementById('btn-menu-rules');
+    this.btnCloseRules = document.getElementById('btn-close-rules');
 
     // New Arcade & Hazard UI Elements
     this.sprayDangerOverlayEl = document.getElementById('spray-danger-overlay');
@@ -203,11 +209,12 @@ class GameApp {
       off: new THREE.Color(0.05, 0.05, 0.05)
     };
 
-    // Camera (Narrow FOV 36 for isometric feel with depth)
+    // Camera (Wider base framing by 20-25% for mobile situational view)
     const aspect = window.innerWidth / window.innerHeight;
-    this.camera = new THREE.PerspectiveCamera(36, aspect, 0.5, 500);
+    const initialFov = aspect < 1.0 ? 58 : 44;
+    this.camera = new THREE.PerspectiveCamera(initialFov, aspect, 0.5, 500);
     this.cameraController = new CameraController(this.camera, {
-      baseHeight: 18.0,
+      baseHeight: 22.5,
       k: 1.35,
     });
 
@@ -1018,6 +1025,24 @@ class GameApp {
       });
     }
 
+    if (this.btnMenuRules) {
+      this.btnMenuRules.addEventListener('click', () => {
+        if (this.rulesModalEl) {
+          this.rulesModalEl.style.display = 'flex';
+          this.rulesModalEl.classList.remove('hidden');
+        }
+      });
+    }
+
+    if (this.btnCloseRules) {
+      this.btnCloseRules.addEventListener('click', () => {
+        if (this.rulesModalEl) {
+          this.rulesModalEl.style.display = 'none';
+          this.rulesModalEl.classList.add('hidden');
+        }
+      });
+    }
+
     if (this.btnGameOverMenu) {
       this.btnGameOverMenu.addEventListener('click', () => {
         this.returnToMenu();
@@ -1097,6 +1122,15 @@ class GameApp {
         const isFixed = this.inputController.toggleJoystickMode();
         this.joystickToggleBtn.textContent = isFixed ? '📌 FIXED' : '🕹️ FLOAT';
         this._showToast(isFixed ? 'FIXED JOYSTICK ON' : 'FLOATING JOYSTICK ON');
+      });
+    }
+
+    // Toggle Developer Cheats & Telemetry Drawer
+    if (this.btnToggleDebug) {
+      this.btnToggleDebug.addEventListener('click', () => {
+        if (this.debugDrawerEl) {
+          this.debugDrawerEl.classList.toggle('collapsed');
+        }
       });
     }
   }
@@ -1461,7 +1495,7 @@ class GameApp {
     const aspect = width / height;
     
     // Responsive FOV: Widen FOV on portrait screens to prevent horizontal clipping
-    this.camera.fov = aspect < 1.0 ? 50 : 36;
+    this.camera.fov = aspect < 1.0 ? 58 : 44;
     
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
@@ -1787,6 +1821,10 @@ class GameApp {
     }
     if (this.panicValEl) {
       this.panicValEl.textContent = `${Math.round((this.entityManager.panicLevel || 0) * 100)}%`;
+    }
+    if (this.panicBarFill) {
+      const panicPct = Math.min(100, Math.round((this.entityManager.panicLevel || 0) * 100));
+      this.panicBarFill.style.width = `${panicPct}%`;
     }
     if (this.hordeBarFill) {
       const pct = Math.min(100, (hordeSize / Math.max(1, totalUnits)) * 100);

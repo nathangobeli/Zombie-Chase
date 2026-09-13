@@ -4,13 +4,13 @@
  */
 export class BoidController {
   constructor(params = {}) {
-    this.separationRadius = params.separationRadius ?? 1.4;
+    this.separationRadius = params.separationRadius ?? 1.5;
     this.neighborRadius = params.neighborRadius ?? 4.0;
     
     // Weight factors
-    this.weightSeparation = params.weightSeparation ?? 3.2;
+    this.weightSeparation = params.weightSeparation ?? 4.4;
     this.weightAlignment = params.weightAlignment ?? 1.2;
-    this.weightCohesion = params.weightCohesion ?? 1.0;
+    this.weightCohesion = params.weightCohesion ?? 0.9;
     this.weightAnchor = params.weightAnchor ?? 2.8;
     this.weightBoundary = params.weightBoundary ?? 4.0;
 
