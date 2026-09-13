@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Zombie Chase — 3D Swarm Reverse-Bullet-Hell</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- 3D Canvas -->
+    <div id="game-container">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- Floating Virtual Joystick -->
+      <div id="joystick-base" class="joystick-base">
+        <div id="joystick-thumb" class="joystick-thumb"></div>
+      </div>
+
+      <!-- Top HUD Header -->
+      <div class="hud-top">
+        <div class="hud-card horde-card">
+          <div class="card-label">SWARM SIZE</div>
+          <div class="card-value-row">
+            <span id="horde-count" class="horde-count">1</span>
+            <span class="horde-label">ZOMBIES</span>
+          </div>
+          <div class="horde-progress-bar">
+            <div id="horde-bar-fill" class="horde-bar-fill"></div>
+          </div>
+        </div>
+
+        <!-- G1: Score & Combo Display -->
+        <div class="hud-card score-card">
+          <div class="card-label">SCORE</div>
+          <div class="score-value" id="score-val">0</div>
+          <div class="combo-display" id="combo-display"></div>
+        </div>
+
+        <div class="hud-card stats-card">
+          <div class="stat-item">
+            <span class="stat-name">CIVILIANS</span>
+            <span id="civ-count" class="stat-val">50</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-name">STRAYS</span>
+            <span id="stray-count" class="stat-val">16</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-name">PANIC</span>
+            <span id="panic-val" class="stat-val stat-fps">0%</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-name">FPS</span>
+            <span id="fps-val" class="stat-val stat-fps">60</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-name">DRAW</span>
+            <span id="draw-calls" class="stat-val stat-fps">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center Dynamic Toast -->
+      <div id="toast-banner" class="toast-banner">HOST TRANSFERRED</div>
+
+      <!-- Stage Progression Banner (@designer & @artist) -->
+      <div id="stage-banner" class="stage-banner hidden">STAGE 1: OUTBREAK DAWN</div>
+
+      <!-- Alone & Hunted Countdown Banner (@designer) -->
+      <div id="alone-warning" class="alone-warning hidden">
+        <div class="alone-header">
+          <span class="alone-badge">⚠️ DANGER</span>
+          <span class="alone-title">HORDE EXTERMINATED!</span>
+        </div>
+        <div class="alone-desc">ALONE &amp; HUNTED — INFECT A HUMAN BEFORE YOU ARE ELIMINATED!</div>
+        <div class="alone-bar-wrapper">
+          <div id="alone-bar-fill" class="alone-bar-fill"></div>
+        </div>
+        <div id="alone-countdown-text" class="alone-countdown-text">7.0s</div>
+      </div>
+
+      <!-- Last Stand Hazmat Decontamination Circular Countdown Widget (@designer & @artist) -->
+      <div id="mist-countdown-widget" class="mist-countdown-widget hidden">
+        <svg class="mist-ring-svg" viewBox="0 0 64 64">
+          <circle class="mist-ring-bg" cx="32" cy="32" r="26" />
+          <circle id="mist-ring-fill" class="mist-ring-fill" cx="32" cy="32" r="26" />
+        </svg>
+        <div class="mist-ring-center">
+          <span class="mist-icon">☣️</span>
+          <span id="mist-timer-text" class="mist-timer-text">5.0s</span>
+        </div>
+        <div class="mist-label">DECONTAMINATING</div>
+      </div>
+
+      <!-- Quick Action Toolbar (Top-Right / Sub-header) -->
+      <div class="hud-actions interactive-hud">
+        <button id="btn-add-civs" class="hud-btn" title="Add 50 Civilians for Swarm Testing">
+          <span class="btn-icon">+50</span>
+          <span class="btn-text">CIVILIANS</span>
+        </button>
+        <button id="btn-spawn-hazmat" class="hud-btn hud-btn-warning" title="Spawn Hazmat Enemy">
+          <span class="btn-icon">⚠️</span>
+          <span class="btn-text">HAZMAT</span>
+        </button>
+        <button id="btn-spawn-military" class="hud-btn hud-btn-warning" title="Spawn Military Riflemen">
+          <span class="btn-icon">🎖️</span>
+          <span class="btn-text">MILITARY</span>
+        </button>
+        <button id="btn-spawn-warden" class="hud-btn" style="background: rgba(249, 115, 22, 0.25); border-color: #f97316;" title="Spawn Megaphone Warden">
+          <span class="btn-icon">📢</span>
+          <span class="btn-text">WARDEN</span>
+        </button>
+        <button id="btn-titan" class="hud-btn" style="background: rgba(168, 85, 247, 0.25); border-color: #a855f7;" title="Activate Titan Virus">
+          <span class="btn-icon">☣️</span>
+          <span class="btn-text">TITAN</span>
+        </button>
+        <button id="btn-view-leaderboard" class="hud-btn" style="background: rgba(250, 204, 21, 0.2); border-color: #facc15;" title="View Leaderboard">
+          <span class="btn-icon">🏆</span>
+          <span class="btn-text">SCORES</span>
+        </button>
+        <!-- G4: Milestone Ability Button (hidden until unlocked) -->
+        <button id="btn-ability" class="hud-btn hud-btn-ability" title="Use Unlocked Milestone Ability" style="display:none">
+          <span class="btn-icon">💥</span>
+          <span class="btn-text">BURST</span>
+        </button>
+        <!-- C2: Fixed Joystick Toggle -->
+        <button id="btn-joystick-mode" class="hud-btn hud-btn-subtle" title="Toggle Fixed Joystick">
+          <span class="btn-icon">🕹️</span>
+          <span class="btn-text">FLOAT</span>
+        </button>
+        <button id="btn-reset" class="hud-btn hud-btn-subtle" title="Restart Simulation">
+          <span class="btn-icon">↺</span>
+          <span class="btn-text">RESET</span>
+        </button>
+      </div>
+
+      <!-- Bottom HUD: Ability & Instructions -->
+      <div class="hud-bottom">
+        <div class="controls-hint">
+          <div class="hint-row"><span class="hint-key">TOUCH &amp; DRAG</span> / <span class="hint-key">WASD</span> Move Swarm</div>
+          <div class="hint-row"><span class="hint-key">SQUEEZE</span> / <span class="hint-key">C / SHIFT</span> Streamline Horde</div>
+          <div class="hint-row"><span class="hint-key">SWIPE FLICK</span> / <span class="hint-key">E</span> Avatar Transfer</div>
+          <div class="hint-row"><span class="hint-key">FRENZY</span> / <span class="hint-key">SPACE</span> Speed Surge</div>
+        </div>
+
+        <!-- Action Buttons: Squeeze & Frenzy -->
+        <div class="action-btn-wrapper interactive-hud">
+          <button id="btn-squeeze" class="hud-btn-squeeze" title="Hold to Squeeze Swarm (C / Shift / Pinch)">
+            <div class="btn-inner">
+              <div class="btn-icon-flash">🏹</div>
+              <div class="btn-label" style="font-size: 8px; font-weight: 800; letter-spacing: 0.5px;">SQUEEZE</div>
+            </div>
+          </button>
+
+          <button id="btn-frenzy" class="frenzy-btn" title="Frenzy Speed Burst (Space)">
+            <svg class="cooldown-ring" viewBox="0 0 100 100">
+              <circle class="ring-bg" cx="50" cy="50" r="44" />
+              <circle id="cooldown-circle" class="ring-fill" cx="50" cy="50" r="44" />
+            </svg>
+            <div class="frenzy-btn-inner">
+              <div class="frenzy-icon">⚡</div>
+              <div class="frenzy-label">FRENZY</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Menu Overlay (STATE_MENU) -->
+    <div id="main-menu-overlay" class="menu-overlay">
+      <div class="menu-card">
+        <div class="menu-logo-badge">☣️ CONTAGION SIMULATOR</div>
+        <h1 class="menu-title">ZOMBIE CHASE</h1>
+        <p class="menu-subtitle">INFECT THE CITY • BUILD THE SWARM • OVERRUN THE QUARANTINE</p>
+
+        <!-- Difficulty Selection -->
+        <div class="menu-difficulty-section">
+          <div class="difficulty-label">SELECT OUTBREAK SEVERITY:</div>
+          <div class="difficulty-pills">
+            <button class="diff-pill" data-diff="casual">
+              <span class="diff-name">CASUAL</span>
+              <span class="diff-multiplier">1.0x</span>
+            </button>
+            <button class="diff-pill active" data-diff="outbreak">
+              <span class="diff-name">OUTBREAK</span>
+              <span class="diff-multiplier">1.5x</span>
+            </button>
+            <button class="diff-pill" data-diff="martial_law">
+              <span class="diff-name">MARTIAL LAW</span>
+              <span class="diff-multiplier">2.5x</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Action CTAs -->
+        <div class="menu-actions">
+          <button id="btn-start-game" class="menu-btn menu-btn-start">START OUTBREAK ▶</button>
+          <button id="btn-menu-leaderboard" class="menu-btn menu-btn-scores">🏆 HIGH SCORES</button>
+        </div>
+
+        <div class="menu-hint">
+          <span>DRAG TO MOVE • HOLD SQUEEZE IN ALLEYS • AVOID MOVING TRAFFIC</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- First-Launch Controls Overlay -->
+    <div id="controls-overlay" class="controls-overlay" style="display: none;">
+      <div class="overlay-card">
+        <div class="overlay-title">HOW TO PLAY</div>
+        <div class="overlay-controls">
+          <div class="oc-row"><span class="oc-key">DRAG / WASD</span> Steer Horde &amp; Infect Humans</div>
+          <div class="oc-row"><span class="oc-key">HOLD SQUEEZE / C</span> Streamline Through Tight Alleys</div>
+          <div class="oc-row"><span class="oc-key">TAP FRENZY / SPACE</span> 10s Speed Surge</div>
+          <div class="oc-row"><span class="oc-key">SWIPE FLICK / E</span> Transfer Patient Zero to Forward Zombie</div>
+          <div class="oc-row"><span class="oc-key">AVOID HAZMAT</span> Chemical Spray Cures Swarm &amp; Quarantines</div>
+          <div class="oc-row"><span class="oc-key">INFECT STREAKS</span> Earn Combos &amp; Score</div>
+        </div>
+        <div class="overlay-dismiss">Tap anywhere to play</div>
+      </div>
+    </div>
+
+    <!-- Spray Danger Red Flash Overlay -->
+    <div id="spray-danger-overlay" class="spray-danger-overlay"></div>
+
+    <!-- Retro Arcade High Score Initials Entry Modal -->
+    <div id="initials-modal" class="arcade-modal" style="display: none;">
+      <div class="arcade-card">
+        <div class="arcade-header">
+          <div class="arcade-badge">🏆 TOP 5 RECORD</div>
+          <h2 class="arcade-title">NEW HIGH SCORE!</h2>
+          <div id="initials-score-preview" class="arcade-score-preview">
+            SCORE: <span id="initials-final-score" class="stat-highlight">0</span> | RANK <span id="initials-rank" class="rank-highlight">#1</span>
+          </div>
+        </div>
+
+        <!-- 3-Slot Tumbler -->
+        <div class="tumbler-container">
+          <div class="tumbler-slot active" data-slot="0">
+            <button class="tumbler-arrow tumbler-arrow-up" data-slot="0" data-dir="-1" title="Previous Character">▲</button>
+            <div class="tumbler-char" id="tumbler-char-0">A</div>
+            <button class="tumbler-arrow tumbler-arrow-down" data-slot="0" data-dir="1" title="Next Character">▼</button>
+          </div>
+          <div class="tumbler-slot" data-slot="1">
+            <button class="tumbler-arrow tumbler-arrow-up" data-slot="1" data-dir="-1" title="Previous Character">▲</button>
+            <div class="tumbler-char" id="tumbler-char-1">A</div>
+            <button class="tumbler-arrow tumbler-arrow-down" data-slot="1" data-dir="1" title="Next Character">▼</button>
+          </div>
+          <div class="tumbler-slot" data-slot="2">
+            <button class="tumbler-arrow tumbler-arrow-up" data-slot="2" data-dir="-1" title="Previous Character">▲</button>
+            <div class="tumbler-char" id="tumbler-char-2">A</div>
+            <button class="tumbler-arrow tumbler-arrow-down" data-slot="2" data-dir="1" title="Next Character">▼</button>
+          </div>
+        </div>
+
+        <!-- Touch Controls & Actions -->
+        <div class="arcade-actions">
+          <button id="btn-initials-prev" class="arcade-btn" title="Previous Slot">◀ PREV</button>
+          <button id="btn-initials-confirm" class="arcade-btn arcade-btn-confirm" title="Advance or Confirm">CONFIRM ▶</button>
+        </div>
+
+        <div class="arcade-hint">
+          <span>TOUCH ARROWS OR TYPE A-Z / 0-9 &amp; ENTER</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Quarantine & Extermination Modal -->
+    <div id="game-over-modal" class="game-over-modal" style="display: none;">
+      <div class="game-over-card">
+        <div class="game-over-icon">☣️</div>
+        <div id="game-over-reason" class="game-over-title">QUARANTINED!</div>
+        <div id="game-over-desc" class="game-over-desc">Patient Zero was fully decontaminated by Hazmat disinfectant spray.</div>
+        
+        <div class="game-over-stats">
+          <div>FINAL SCORE: <span id="game-over-score" class="stat-highlight">0</span></div>
+          <div>PEAK HORDE: <span id="game-over-horde" class="stat-highlight">1</span></div>
+          <div>SURVIVAL TIME: <span id="game-over-time" class="stat-highlight">00:00</span></div>
+        </div>
+
+        <!-- Leaderboard Table Section -->
+        <div class="leaderboard-section">
+          <div class="leaderboard-header">
+            <span class="leaderboard-title">🏆 TOP 5 LEADERBOARD</span>
+            <span id="leaderboard-diff-badge" class="diff-badge">OUTBREAK</span>
+          </div>
+          <div class="leaderboard-table-wrapper">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>RK</th>
+                  <th>TAG</th>
+                  <th>SCORE</th>
+                  <th>PEAK</th>
+                  <th>TIME</th>
+                  <th>DATE</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-rows">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="game-over-actions">
+          <button id="btn-game-over-restart" class="hud-btn hud-btn-restart">🔄 PLAY AGAIN</button>
+          <button id="btn-game-over-menu" class="hud-btn hud-btn-menu">🏠 MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Standalone Leaderboard Modal (Viewable Anytime via HUD) -->
+    <div id="standalone-leaderboard-modal" class="game-over-modal" style="display: none;">
+      <div class="game-over-card">
+        <div class="game-over-icon">🏆</div>
+        <div class="game-over-title" style="color: #facc15;">HALL OF INFAMY</div>
+        <div class="game-over-desc">Top contagion records in Outbreak mode.</div>
+        
+        <div class="leaderboard-section">
+          <div class="leaderboard-header">
+            <span class="leaderboard-title">TOP 5 RECORD CARRIERS</span>
+            <span class="diff-badge">OUTBREAK</span>
+          </div>
+          <div class="leaderboard-table-wrapper">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>RK</th>
+                  <th>TAG</th>
+                  <th>SCORE</th>
+                  <th>PEAK</th>
+                  <th>TIME</th>
+                  <th>DATE</th>
+                </tr>
+              </thead>
+              <tbody id="standalone-leaderboard-rows">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <button id="btn-close-leaderboard" class="hud-btn" style="width: 100%; margin-top: 14px; background: rgba(56, 189, 248, 0.25); border-color: #38bdf8;">CLOSE ✕</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
