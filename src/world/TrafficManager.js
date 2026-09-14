@@ -350,14 +350,27 @@ export class TrafficManager {
         // Still check follower casualties below
       } else if (pzDistSq < 3.2 * 3.2) {
         if (entityManager && entityManager.isTitan) {
-          // TITAN VIRUS TOTAL CRUSH: Vehicle flips and shatters
-          v.isCrushed = true;
-          v.crushVy = 7.5;
-          v.crushRotSpeed = 12.0;
-          if (audioSystem) audioSystem.playCarCrash();
-          if (cameraController) cameraController.triggerShake(0.45, 0.6);
-          if (particles) particles.burstDustCloud(v.x, v.z, 22);
-          if (showFloatingText) showFloatingText('💥 +50 CRUSH!', v.x, v.z, 'fct-powerup');
+          // TITAN VIRUS EXPLOSIVE DEMOLITION: Vehicle detonates into flying fireball & debris
+          v.active = false;
+          v.isCrushed = false;
+          if (v.mesh) {
+            v.mesh.visible = false;
+          }
+          if (entityManager.onCarSmashed) {
+            entityManager.onCarSmashed(
+              { x: v.x, z: v.z, color: v.color || 0xef4444 },
+              pz.vx || v.vx || 1,
+              pz.vz || v.vz || 0
+            );
+          } else {
+            if (particles && particles.burstExplosion) particles.burstExplosion(v.x, v.z);
+            if (audioSystem) {
+              audioSystem.playExplosion();
+              audioSystem.playCarCrash();
+            }
+            if (cameraController) cameraController.triggerShake(0.55, 0.7);
+            if (showFloatingText) showFloatingText('💥 CAR DEMOLISHED! +500', v.x, v.z, 'fct-powerup');
+          }
           if (entityManager) entityManager.score += 500;
           continue;
         } else {

@@ -280,6 +280,12 @@ class GameApp {
 
     // 1. Spatial Hash Grid for Obstacles & Entity Queries
     this.spatialGrid = new SpatialGrid(4.0);
+    this.spatialGrid.onCarDemolished = (obs, hitDirX, hitDirZ) => {
+      const prop = obs.prop || { x: obs.centerX, z: obs.centerZ, color: 0x3b82f6 };
+      if (this.entityManager && this.entityManager.onCarSmashed) {
+        this.entityManager.onCarSmashed(prop, hitDirX, hitDirZ);
+      }
+    };
 
     // 2. Infinite Procedural City Streamer (5x5 chunk window = 320x320m active area)
     this.cityStreamer = new CityStreamer(this.scene, { renderDistance: 2 });
@@ -585,13 +591,50 @@ class GameApp {
       }
     };
 
-    // Prop knocked by bulldozer horde
+    // Prop knocked by bulldozer horde or Titan
     this.entityManager.onPropKnocked = (prop, hitDirX, hitDirZ) => {
       this.audioSystem.playPropCrash();
-      this.particles.burstDustCloud(prop.x, prop.z, 8);
+      let shakeIntensity = 0.16;
+      let floatingText = '+25 CRUSH!';
+
+      if (prop.type === 'lamp' || prop.type === 'stoplight') {
+        this.particles.burstSparks(prop.x, prop.z, 20);
+        shakeIntensity = 0.22;
+        floatingText = '💥 LAMP SMASHED! +25';
+      } else if (prop.type === 'bush') {
+        this.particles.burstLeaves(prop.x, prop.z, 24);
+        floatingText = '🍃 BUSH CRUSHED! +25';
+      } else if (prop.type === 'bench') {
+        this.particles.burstWoodSplinters(prop.x, prop.z, 18);
+        floatingText = '💥 BENCH OBLITERATED! +25';
+      } else if (prop.type === 'hydrant') {
+        this.particles.burstWaterGeyser(prop.x, prop.z, 25);
+        shakeIntensity = 0.20;
+        floatingText = '💦 HYDRANT BURST! +25';
+      } else if (prop.type === 'trash') {
+        this.particles.burstDustCloud(prop.x, prop.z, 14);
+        floatingText = '💥 TRASH CAN SMASH! +25';
+      } else if (prop.type === 'planter') {
+        this.particles.burstLeaves(prop.x, prop.z, 14);
+        this.particles.burstDustCloud(prop.x, prop.z, 8);
+        floatingText = '🌸 PLANTER SMASH! +25';
+      } else {
+        this.particles.burstDustCloud(prop.x, prop.z, 10);
+      }
+
       this._spawnDebris(prop, hitDirX, hitDirZ);
-      this.cameraController.triggerShake(0.12, 0.25);
-      this._showFloatingText('+25 CRUSH!', prop.x, prop.z, 'fct-combo');
+      this.cameraController.triggerShake(shakeIntensity, 0.3);
+      this._showFloatingText(floatingText, prop.x, prop.z, 'fct-combo');
+    };
+
+    // Car smashed by Titan Infected
+    this.entityManager.onCarSmashed = (prop, hitDirX, hitDirZ) => {
+      this.audioSystem.playExplosion();
+      this.audioSystem.playCarCrash();
+      this.particles.burstExplosion(prop.x, prop.z);
+      this._spawnCarExplosionDebris(prop.x, prop.z, prop.color, hitDirX, hitDirZ);
+      this.cameraController.triggerShake(0.55, 0.7);
+      this._showFloatingText('💥 CAR DEMOLISHED! +100', prop.x, prop.z, 'fct-powerup');
     };
 
     // Explosion (Bloater Bomb)
@@ -817,45 +860,201 @@ class GameApp {
     }, 900);
   }
 
-  _spawnDebris(prop, hitDirX, hitDirZ) {
-    let geom;
-    let matColor = 0x94a3b8;
-    if (prop.type === 'lamp') {
-      geom = new THREE.CylinderGeometry(0.12, 0.16, 2.2, 6);
-      matColor = 0x475569;
-    } else if (prop.type === 'hydrant') {
-      geom = new THREE.CylinderGeometry(0.24, 0.28, 0.7, 8);
-      matColor = 0xef4444;
-    } else {
-      geom = new THREE.CylinderGeometry(0.3, 0.26, 0.75, 8);
-      matColor = 0x64748b;
+  _addDebrisPiece(mesh, x, y, z, vx, vy, vz, rx, ry, rz, life = 2.2) {
+    if (this.debrisList.length >= 40) {
+      const oldest = this.debrisList.shift();
+      if (oldest && oldest.mesh) {
+        this.scene.remove(oldest.mesh);
+        if (oldest.mesh.geometry) oldest.mesh.geometry.dispose();
+        if (oldest.mesh.material) oldest.mesh.material.dispose();
+      }
     }
-    const mat = new THREE.MeshToonMaterial({
-      color: matColor,
-      gradientMap: this.renderer3D.gradientMap
-    });
-    const mesh = new THREE.Mesh(geom, mat);
     mesh.castShadow = true;
-    mesh.position.set(prop.x, 0.5, prop.z);
+    mesh.position.set(x, y, z);
     this.scene.add(mesh);
-
-    const speed = 11 + Math.random() * 8;
-    const vx = hitDirX * speed + (Math.random() - 0.5) * 4;
-    const vy = 6 + Math.random() * 5;
-    const vz = hitDirZ * speed + (Math.random() - 0.5) * 4;
-
     this.debrisList.push({
       mesh,
-      x: prop.x,
-      y: 0.5,
-      z: prop.z,
+      x, y, z,
       vx, vy, vz,
-      rx: (Math.random() - 0.5) * 16,
-      ry: (Math.random() - 0.5) * 16,
-      rz: (Math.random() - 0.5) * 16,
-      life: 2.2,
-      bounces: 0
+      rx, ry, rz,
+      life,
+      bounces: 0,
     });
+  }
+
+  _spawnDebris(prop, hitDirX, hitDirZ) {
+    const pzSpeed = 10 + Math.random() * 8;
+    const baseVx = hitDirX * pzSpeed + (Math.random() - 0.5) * 4;
+    const baseVy = 6 + Math.random() * 5;
+    const baseVz = hitDirZ * pzSpeed + (Math.random() - 0.5) * 4;
+
+    if (prop.type === 'lamp' || prop.type === 'stoplight') {
+      // Snapped vertical iron pole
+      const poleGeom = new THREE.CylinderGeometry(0.10, 0.14, 2.6, 6);
+      const poleMat = new THREE.MeshToonMaterial({ color: 0x1e293b, gradientMap: this.renderer3D.gradientMap });
+      const poleMesh = new THREE.Mesh(poleGeom, poleMat);
+      this._addDebrisPiece(poleMesh, prop.x, 1.2, prop.z, baseVx, baseVy, baseVz, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16);
+
+      // Smashed lantern hood / housing
+      const hoodGeom = new THREE.BoxGeometry(0.35, 0.35, 0.35);
+      const hoodMat = new THREE.MeshToonMaterial({ color: 0xfef08a, gradientMap: this.renderer3D.gradientMap });
+      const hoodMesh = new THREE.Mesh(hoodGeom, hoodMat);
+      this._addDebrisPiece(hoodMesh, prop.x, 1.8, prop.z, baseVx * 1.2, baseVy + 2, baseVz * 1.2, 12, 15, 12);
+    } else if (prop.type === 'bush') {
+      // 3 Chunky green foliage clusters
+      const greens = [0x15803d, 0x16a34a, 0x84cc16];
+      for (let i = 0; i < 3; i++) {
+        const leafGeom = new THREE.IcosahedronGeometry(0.55 + Math.random() * 0.25, 1);
+        const leafMat = new THREE.MeshToonMaterial({ color: greens[i], gradientMap: this.renderer3D.gradientMap });
+        const leafMesh = new THREE.Mesh(leafGeom, leafMat);
+        const spreadAngle = (i / 3) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+        const spd = 6 + Math.random() * 5;
+        this._addDebrisPiece(
+          leafMesh,
+          prop.x + (Math.random() - 0.5) * 0.4,
+          0.8 + Math.random() * 0.5,
+          prop.z + (Math.random() - 0.5) * 0.4,
+          baseVx * 0.6 + Math.cos(spreadAngle) * spd,
+          baseVy + Math.random() * 3,
+          baseVz * 0.6 + Math.sin(spreadAngle) * spd,
+          (Math.random() - 0.5) * 14,
+          (Math.random() - 0.5) * 14,
+          (Math.random() - 0.5) * 14
+        );
+      }
+      // Wooden trunk splinter
+      const trunkGeom = new THREE.CylinderGeometry(0.18, 0.22, 0.7, 6);
+      const trunkMat = new THREE.MeshToonMaterial({ color: 0x78350f, gradientMap: this.renderer3D.gradientMap });
+      const trunkMesh = new THREE.Mesh(trunkGeom, trunkMat);
+      this._addDebrisPiece(trunkMesh, prop.x, 0.4, prop.z, baseVx * 0.8, baseVy, baseVz * 0.8, 10, 12, 8);
+    } else if (prop.type === 'bench') {
+      // 2 wooden cedar slats
+      for (let i = 0; i < 2; i++) {
+        const slatGeom = new THREE.BoxGeometry(1.4, 0.08, 0.16);
+        const slatMat = new THREE.MeshToonMaterial({ color: i === 0 ? 0xb45309 : 0xd97706, gradientMap: this.renderer3D.gradientMap });
+        const slatMesh = new THREE.Mesh(slatGeom, slatMat);
+        this._addDebrisPiece(
+          slatMesh,
+          prop.x + (i - 0.5) * 0.4,
+          0.6,
+          prop.z,
+          baseVx + (Math.random() - 0.5) * 5,
+          baseVy + 1 + Math.random() * 3,
+          baseVz + (Math.random() - 0.5) * 5,
+          (Math.random() - 0.5) * 18,
+          (Math.random() - 0.5) * 18,
+          (Math.random() - 0.5) * 18
+        );
+      }
+      // Cast iron leg frame
+      const ironGeom = new THREE.BoxGeometry(0.14, 0.45, 0.44);
+      const ironMat = new THREE.MeshToonMaterial({ color: 0x1e293b, gradientMap: this.renderer3D.gradientMap });
+      const ironMesh = new THREE.Mesh(ironGeom, ironMat);
+      this._addDebrisPiece(ironMesh, prop.x, 0.4, prop.z, baseVx * 0.7, baseVy, baseVz * 0.7, 8, 10, 8);
+    } else if (prop.type === 'hydrant') {
+      // Red hydrant body
+      const hydrantGeom = new THREE.CylinderGeometry(0.22, 0.26, 0.7, 8);
+      const hydrantMat = new THREE.MeshToonMaterial({ color: 0xe63946, gradientMap: this.renderer3D.gradientMap });
+      const hydrantMesh = new THREE.Mesh(hydrantGeom, hydrantMat);
+      this._addDebrisPiece(hydrantMesh, prop.x, 0.6, prop.z, baseVx, baseVy + 2, baseVz, 14, 16, 12);
+    } else if (prop.type === 'trash') {
+      // Metal trash can
+      const canGeom = new THREE.CylinderGeometry(0.28, 0.22, 0.72, 8);
+      const canMat = new THREE.MeshToonMaterial({ color: 0x64748b, gradientMap: this.renderer3D.gradientMap });
+      const canMesh = new THREE.Mesh(canGeom, canMat);
+      this._addDebrisPiece(canMesh, prop.x, 0.5, prop.z, baseVx, baseVy, baseVz, 12, 10, 14);
+
+      // Trash can collar / lid flying in opposing direction
+      const lidGeom = new THREE.CylinderGeometry(0.30, 0.30, 0.08, 8);
+      const lidMat = new THREE.MeshToonMaterial({ color: 0x334155, gradientMap: this.renderer3D.gradientMap });
+      const lidMesh = new THREE.Mesh(lidGeom, lidMat);
+      this._addDebrisPiece(lidMesh, prop.x, 0.8, prop.z, baseVx * 1.3, baseVy + 3, baseVz * 1.3, 16, 18, 16);
+    } else if (prop.type === 'planter') {
+      const woodGeom = new THREE.BoxGeometry(1.1, 0.35, 0.6);
+      const woodMat = new THREE.MeshToonMaterial({ color: 0x92400e, gradientMap: this.renderer3D.gradientMap });
+      const woodMesh = new THREE.Mesh(woodGeom, woodMat);
+      this._addDebrisPiece(woodMesh, prop.x, 0.4, prop.z, baseVx, baseVy, baseVz, 10, 12, 10);
+
+      const flowerGeom = new THREE.IcosahedronGeometry(0.38, 1);
+      const flowerMat = new THREE.MeshToonMaterial({ color: 0x16a34a, gradientMap: this.renderer3D.gradientMap });
+      const flowerMesh = new THREE.Mesh(flowerGeom, flowerMat);
+      this._addDebrisPiece(flowerMesh, prop.x, 0.7, prop.z, baseVx * 0.9, baseVy + 2, baseVz * 0.9, 14, 14, 14);
+    } else {
+      const genericGeom = new THREE.CylinderGeometry(0.3, 0.26, 0.75, 8);
+      const genericMat = new THREE.MeshToonMaterial({ color: 0x64748b, gradientMap: this.renderer3D.gradientMap });
+      const genericMesh = new THREE.Mesh(genericGeom, genericMat);
+      this._addDebrisPiece(genericMesh, prop.x, 0.5, prop.z, baseVx, baseVy, baseVz, 12, 12, 12);
+    }
+  }
+
+  _spawnCarExplosionDebris(x, z, carColor, hitDirX, hitDirZ) {
+    const speed = 12 + Math.random() * 8;
+    const fwdVx = (hitDirX || 1) * speed;
+    const fwdVz = (hitDirZ || 0) * speed;
+
+    // 1. 4 Rubber Tires spinning and bouncing outwards in 4 quadrants
+    const tireAngles = [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
+    for (let i = 0; i < 4; i++) {
+      const angle = tireAngles[i] + (Math.random() - 0.5) * 0.35;
+      const radialSpeed = 9 + Math.random() * 6;
+      const vx = Math.cos(angle) * radialSpeed + fwdVx * 0.35;
+      const vz = Math.sin(angle) * radialSpeed + fwdVz * 0.35;
+      const vy = 6.5 + Math.random() * 5.0;
+
+      const tireGeom = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 8);
+      tireGeom.rotateZ(Math.PI / 2);
+      const tireMat = new THREE.MeshToonMaterial({ color: 0x18181b, gradientMap: this.renderer3D.gradientMap });
+      const tireMesh = new THREE.Mesh(tireGeom, tireMat);
+      this._addDebrisPiece(tireMesh, x, 0.5, z, vx, vy, vz, 18, 12, 18, 2.5);
+    }
+
+    // 2. Front & Rear Bumpers (cartwheeling end-over-end)
+    for (let b = 0; b < 2; b++) {
+      const bGeom = new THREE.BoxGeometry(2.0, 0.25, 0.25);
+      const bMat = new THREE.MeshToonMaterial({ color: 0x475569, gradientMap: this.renderer3D.gradientMap });
+      const bMesh = new THREE.Mesh(bGeom, bMat);
+      const bSign = b === 0 ? 1 : -1;
+      this._addDebrisPiece(
+        bMesh,
+        x, 0.6, z,
+        fwdVx * 0.7 + (Math.random() - 0.5) * 6,
+        7.5 + Math.random() * 4,
+        fwdVz * 0.7 + (Math.random() - 0.5) * 6,
+        bSign * 16, (Math.random() - 0.5) * 14, bSign * 16,
+        2.4
+      );
+    }
+
+    // 3. Shattered Body / Hood / Roof Panels (painted in car color)
+    const colorHex = carColor instanceof THREE.Color ? carColor.getHex() : (carColor || 0xd90429);
+    for (let p = 0; p < 2; p++) {
+      const panelGeom = new THREE.BoxGeometry(1.4, 0.12, 1.1);
+      const panelMat = new THREE.MeshToonMaterial({ color: colorHex, gradientMap: this.renderer3D.gradientMap });
+      const panelMesh = new THREE.Mesh(panelGeom, panelMat);
+      this._addDebrisPiece(
+        panelMesh,
+        x + (p - 0.5) * 0.6, 0.8, z + (p - 0.5) * 0.6,
+        fwdVx * 0.8 + (Math.random() - 0.5) * 7,
+        8.5 + Math.random() * 5.5,
+        fwdVz * 0.8 + (Math.random() - 0.5) * 7,
+        (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20,
+        2.5
+      );
+    }
+
+    // 4. Heavy Engine Block / Transmission
+    const engineGeom = new THREE.BoxGeometry(0.75, 0.6, 0.65);
+    const engineMat = new THREE.MeshToonMaterial({ color: 0x0f172a, gradientMap: this.renderer3D.gradientMap });
+    const engineMesh = new THREE.Mesh(engineGeom, engineMat);
+    this._addDebrisPiece(
+      engineMesh,
+      x, 0.5, z,
+      fwdVx * 0.5 + (Math.random() - 0.5) * 3,
+      5.0 + Math.random() * 3.5,
+      fwdVz * 0.5 + (Math.random() - 0.5) * 3,
+      8, 10, 8,
+      2.2
+    );
   }
 
   _restartGame() {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class ParticleSystem {
-  constructor(scene, maxParticles = 600) {
+  constructor(scene, maxParticles = 800) {
     this.maxParticles = maxParticles;
     this.particles = [];
     this.activeCount = 0;
@@ -361,6 +361,216 @@ export class ParticleSystem {
         0.35 + Math.random() * 0.25,
         0.22,
         false
+      );
+    }
+  }
+
+  /**
+   * Massive Hollywood-style cinematic explosion for demolished cars
+   */
+  burstExplosion(x, z) {
+    // 1. Hot white/yellow core flash puffs
+    for (let i = 0; i < 8; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 2.0 + Math.random() * 4.0;
+      this.spawn(
+        x + (Math.random() - 0.5) * 0.4,
+        0.5 + Math.random() * 0.6,
+        z + (Math.random() - 0.5) * 0.4,
+        Math.cos(angle) * spd,
+        2.0 + Math.random() * 3.5,
+        Math.sin(angle) * spd,
+        1.0,
+        0.95,
+        0.35, // Brilliant radiant yellow flash
+        0.28 + Math.random() * 0.15,
+        0.65 + Math.random() * 0.25,
+        true
+      );
+    }
+
+    // 2. Expanding flame and fireball clouds (vibrant cartoon flame orange/red)
+    for (let i = 0; i < 14; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 3.5 + Math.random() * 4.5;
+      const isOrange = Math.random() > 0.4;
+      this.spawn(
+        x + (Math.random() - 0.5) * 0.8,
+        0.6 + Math.random() * 0.8,
+        z + (Math.random() - 0.5) * 0.8,
+        Math.cos(angle) * spd,
+        3.0 + Math.random() * 4.5,
+        Math.sin(angle) * spd,
+        1.0,
+        isOrange ? 0.45 : 0.15,
+        0.05, // Flame orange / fiery red
+        0.45 + Math.random() * 0.25,
+        0.75 + Math.random() * 0.35,
+        true
+      );
+    }
+
+    // 3. Rolling dark charcoal smoke clouds
+    for (let i = 0; i < 16; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 1.5 + Math.random() * 3.0;
+      const shade = 0.18 + Math.random() * 0.12;
+      this.spawn(
+        x + (Math.random() - 0.5) * 1.2,
+        0.8 + Math.random() * 1.0,
+        z + (Math.random() - 0.5) * 1.2,
+        Math.cos(angle) * spd,
+        2.5 + Math.random() * 3.5,
+        Math.sin(angle) * spd,
+        shade,
+        shade,
+        shade + 0.04, // Dark billow smoke
+        0.65 + Math.random() * 0.35,
+        0.80 + Math.random() * 0.40,
+        true
+      );
+    }
+
+    // 4. High-velocity burning ember sparks
+    for (let i = 0; i < 20; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 5.0 + Math.random() * 7.5;
+      this.spawn(
+        x,
+        0.6,
+        z,
+        Math.cos(angle) * spd,
+        4.0 + Math.random() * 6.0,
+        Math.sin(angle) * spd,
+        1.0,
+        0.75 + Math.random() * 0.25,
+        0.10, // Fiery neon ember sparks
+        0.45 + Math.random() * 0.35,
+        0.20 + Math.random() * 0.10,
+        false
+      );
+    }
+
+    // 5. Ground dust shockwave ring
+    this.burstShockwave(x, z, 4.5);
+  }
+
+  /**
+   * Vibrant green leaf clusters and bark splinters when smashing bushes/trees
+   */
+  burstLeaves(x, z, count = 20) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 2.5 + Math.random() * 4.5;
+      const isLime = Math.random() > 0.45;
+      this.spawn(
+        x + (Math.random() - 0.5) * 0.8,
+        0.6 + Math.random() * 1.0,
+        z + (Math.random() - 0.5) * 0.8,
+        Math.cos(angle) * spd,
+        2.0 + Math.random() * 3.5,
+        Math.sin(angle) * spd,
+        isLime ? 0.52 : 0.08,
+        isLime ? 0.90 : 0.72,
+        isLime ? 0.12 : 0.25, // Lime green and emerald foliage
+        0.45 + Math.random() * 0.30,
+        0.42 + Math.random() * 0.25,
+        true
+      );
+    }
+
+    // Wood trunk splinter fragments
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 2.0 + Math.random() * 3.0;
+      this.spawn(
+        x,
+        0.4,
+        z,
+        Math.cos(angle) * spd,
+        1.8 + Math.random() * 2.5,
+        Math.sin(angle) * spd,
+        0.47,
+        0.21,
+        0.06, // Brown wood splinter #78350f
+        0.35 + Math.random() * 0.2,
+        0.20,
+        false
+      );
+    }
+  }
+
+  /**
+   * High-voltage sparks and electrical clatter when smashing street lamps
+   */
+  burstSparks(x, z, count = 18) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 3.5 + Math.random() * 6.5;
+      const isCyan = Math.random() > 0.65;
+      this.spawn(
+        x + (Math.random() - 0.5) * 0.3,
+        2.2 + (Math.random() - 0.5) * 1.0,
+        z + (Math.random() - 0.5) * 0.3,
+        Math.cos(angle) * spd,
+        3.0 + Math.random() * 4.5,
+        Math.sin(angle) * spd,
+        isCyan ? 0.25 : 1.0,
+        isCyan ? 0.92 : 0.95,
+        isCyan ? 1.00 : 0.20, // Electric yellow & cyan arcs
+        0.30 + Math.random() * 0.25,
+        0.18 + Math.random() * 0.08,
+        false
+      );
+    }
+  }
+
+  /**
+   * Cedar wood chips and iron brackets when pulverizing park benches
+   */
+  burstWoodSplinters(x, z, count = 16) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 2.5 + Math.random() * 4.0;
+      const isIron = Math.random() > 0.65;
+      this.spawn(
+        x + (Math.random() - 0.5) * 0.5,
+        0.5 + Math.random() * 0.4,
+        z + (Math.random() - 0.5) * 0.5,
+        Math.cos(angle) * spd,
+        2.2 + Math.random() * 3.0,
+        Math.sin(angle) * spd,
+        isIron ? 0.20 : 0.85,
+        isIron ? 0.22 : 0.47,
+        isIron ? 0.28 : 0.05, // Cedar wood amber and cast iron slate
+        0.40 + Math.random() * 0.25,
+        0.24 + Math.random() * 0.12,
+        false
+      );
+    }
+  }
+
+  /**
+   * High-pressure vertical water geyser spraying into the sky from ruptured hydrant
+   */
+  burstWaterGeyser(x, z, count = 24) {
+    for (let i = 0; i < count; i++) {
+      const spread = (Math.random() - 0.5) * 1.2;
+      const spd = 1.0 + Math.random() * 2.2;
+      const angle = Math.random() * Math.PI * 2;
+      this.spawn(
+        x + Math.cos(angle) * 0.25,
+        0.5 + Math.random() * 0.4,
+        z + Math.sin(angle) * 0.25,
+        Math.cos(angle) * spd,
+        7.5 + Math.random() * 5.5, // Shoot straight up into the air
+        Math.sin(angle) * spd,
+        0.35,
+        0.82,
+        1.00, // Sky blue water #38bdf8
+        0.55 + Math.random() * 0.35,
+        0.30 + Math.random() * 0.18,
+        true
       );
     }
   }

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-09-13 — "Titan Destruction Mechanics: Car Demolition & Prop Smashing"
+
+### Added — Titan Car Explosive Demolition (@designer & @artist)
+- **Titan Smashes Through Cars** (`EntityManager.js`, `SpatialGrid.js`, `TrafficManager.js`, `main.js`):
+  - When Patient Zero is Titan infected (`isTitan === true`), colliding with parked cars, road-blocking vehicles, or moving traffic instantly detonates the vehicle into an explosive fireball.
+  - **Zero-Draw-Call Static Mesh Collapse** (`CityChunk.js`): Static parked cars in `propsMesh` have their vertex coordinates collapsed below ground (`Y = -999.0`) at the moment of impact, instantly removing the car visually while adding 0 draw calls to the mobile rendering budget.
+  - **Obstacle Clearance** (`SpatialGrid.js`, `CityChunk.js`): Destroyed car obstacles have their 2D AABB bounding boxes disabled (`obstacle.disabled = true`), allowing Titan and the swarm to walk straight through with zero deceleration or snagging.
+  - **Moving Traffic Demolition** (`TrafficManager.js`): When Titan collides with moving traffic vehicles, the vehicle mesh is deactivated and detonated into an explosive blast with a +500 bonus score.
+- **Cinematic Explosion & Flying Vehicle Debris** (`Particles.js`, `main.js`):
+  - **Explosion FX** (`burstExplosion`): Hot white/yellow flash core puffs, expanding flame orange and crimson fireball clouds, billowing dark charcoal smoke, glowing ember sparks, and a ground dust shockwave ring.
+  - **3D Flying Debris Physics** (`_spawnCarExplosionDebris`): 4 spinning rubber tires shoot outward in 4 diagonal directions with bouncing physics, front & rear bumpers cartwheel end-over-end, 2 shattered body panels fly upward in the car's paint color, and a heavy dark engine block tumbles across the asphalt.
+  - **Audio & Screen Shake**: Dual synchronized explosion and metal crash sound effects (`playExplosion()`, `playCarCrash()`), heavy camera shake (`0.55`, `0.7s`), and floating combat text `💥 CAR DEMOLISHED! +100`.
+
+### Added — Street Prop Demolition System (@artist & @designer)
+- **Multi-Prop Smashing Mechanics** (`CityChunk.js`, `EntityManager.js`, `main.js`):
+  - Titan Infected (and bulldozer swarms >= 20) can now smash street lamps, traffic lights, chunky cloud-style bushes/trees, wooden park benches, fire hydrants, trash cans, and flower planters.
+  - **Street Lamps & Stop Lights**: Snapped vertical iron pole and shattered lantern hood debris, accompanied by electric high-voltage yellow & cyan spark bursts (`burstSparks`), metal clatter audio, and `💥 LAMP SMASHED! +25` floating text.
+  - **Bushes & Trees**: Clustered leafy green icosahedron debris chunks and splintered wooden trunk fragments, accompanied by fluttering emerald/lime leaf puffs (`burstLeaves`), wood splinter particles, and `🍃 BUSH CRUSHED! +25` floating text.
+  - **Park Benches**: Shattered cedar wood slats and cast-iron frame legs flying apart with bouncing physics, wood chip particles (`burstWoodSplinters`), and `💥 BENCH OBLITERATED! +25` floating text.
+  - **Fire Hydrants**: Red hydrant cylinder tumbling through the air, continuous high-pressure vertical water geyser droplets spraying into the sky (`burstWaterGeyser`), and `💦 HYDRANT BURST! +25` floating text.
+  - **Trash Cans & Planters**: Metal cans with flying lids, wood planter boxes with scattering flower petals, and custom floating combat text.
+  - All smashed static props collapse their vertices in `propsMesh` at zero draw-call cost.
+
+### Verified — Automated QA Validation (@qa)
+- **Headless Playtest Suite** (`scripts/playtest.js`):
+  - Added automated assertion `titanDestructionCheck` verifying Titan car smashing, obstacle disabling, vertex collapse, bush/lamp destruction, and debris piece generation.
+  - Verified zero JavaScript errors or frame rate regressions.
+  - `npm run build` compiled client bundle with 0 errors.
+
+---
+
 ## [2.8.0] - 2026-09-13 — "Mobile Optimization, Swarm Spacing, UI Polish & PWA Biohazard Assets"
 
 ### Added — Mobile Viewport & PWA Assets (@artist & @designer)

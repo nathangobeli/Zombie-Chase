@@ -14,6 +14,7 @@ export class SpatialGrid {
     // Static building obstacles AABBs
     this.obstacles = [];
     this.chunkObstacles = new Map();
+    this.onCarDemolished = null; // (obstacle, hitDirX, hitDirZ)
   }
 
   setObstacles(obstacles) {
@@ -175,10 +176,27 @@ export class SpatialGrid {
       
       for (let i = 0; i < this.obstacles.length; i++) {
         const b = this.obstacles[i];
+        if (b.disabled) continue;
+
         // Quick distance check from center
         const distX = currentX - b.centerX;
         const distZ = currentZ - b.centerZ;
         if (Math.abs(distX) > b.halfW + radius || Math.abs(distZ) > b.halfD + radius) {
+          continue;
+        }
+
+        // Titan smashing through parked / blocking car without deceleration
+        if (entity.isTitan && b.isCar) {
+          b.disabled = true;
+          if (b.prop && !b.prop.knocked) {
+            b.prop.knocked = true;
+            if (b.prop.chunk && b.prop.chunk.collapseProp) {
+              b.prop.chunk.collapseProp(b.prop);
+            }
+          }
+          if (this.onCarDemolished) {
+            this.onCarDemolished(b, entity.vx || (currentX - b.centerX), entity.vz || (currentZ - b.centerZ));
+          }
           continue;
         }
 

@@ -45,6 +45,7 @@ export class EntityManager {
     this.onPatientZeroSprayed = null; // (dt, progress)
     this.onHazmatDamageDealt = null;  // (dt)
     this.onPropKnocked = null;        // (prop, hitDirX, hitDirZ)
+    this.onCarSmashed = null;         // (carProp, hitDirX, hitDirZ)
     this.onExplosion = null;          // (x, z)
     this.onTitanActivated = null;     // ()
     this.onTitanExpired = null;       // ()
@@ -993,6 +994,7 @@ export class EntityManager {
     // Resolve building obstacle collisions for Patient Zero
     const pzPrevX = pz.x - pz.vx * dt;
     const pzPrevZ = pz.z - pz.vz * dt;
+    pz.isTitan = !!this.isTitan;
     spatialGrid.resolveObstacles(pz, pz.radius * (this.isTitan ? 1.8 : 1.0), true, pzPrevX, pzPrevZ);
 
     // 4. Populate Spatial Grid
@@ -1941,10 +1943,10 @@ export class EntityManager {
       }
     }
 
-    // 11. Bulldozer Physics: Horde >= 20 knocks down small street props
+    // 11. Bulldozer & Titan Physics: Titan OR Horde >= 20 knocks down small street props & parked cars
     const totalSwarm = this.zombies.length + 1;
-    if (totalSwarm >= 20 && this.cityStreamer && this.cityStreamer.getNearbyKnockableProps) {
-      const checkRadius = 14.0;
+    if ((this.isTitan || totalSwarm >= 20) && this.cityStreamer && this.cityStreamer.getNearbyKnockableProps) {
+      const checkRadius = this.isTitan ? 16.0 : 14.0;
       const nearbyProps = this.cityStreamer.getNearbyKnockableProps(pz.x, pz.z, checkRadius);
       for (let pi = 0; pi < nearbyProps.length; pi++) {
         const prop = nearbyProps[pi];
@@ -1954,12 +1956,15 @@ export class EntityManager {
         let hitDirX = pz.vx || 0;
         let hitDirZ = pz.vz || 0;
 
+        // Titan reach is much wider (~3.2m), bulldozer PZ reach is ~1.5m
+        const pzReach = this.isTitan ? 3.0 : (pz.radius + 0.4);
         const pzDist = Math.hypot(prop.x - pz.x, prop.z - pz.z);
-        if (pzDist <= prop.radius + pz.radius + 0.4) {
+        if (pzDist <= prop.radius + pzReach) {
           hit = true;
         }
 
-        if (!hit) {
+        // Swarm followers can only knock non-car props if totalSwarm >= 20
+        if (!hit && totalSwarm >= 20 && !prop.isCar) {
           for (let zi = 0; zi < this.zombies.length; zi++) {
             const z = this.zombies[zi];
             const zd = Math.hypot(prop.x - z.x, prop.z - z.z);
@@ -1974,12 +1979,25 @@ export class EntityManager {
 
         if (hit) {
           prop.knocked = true;
-          this.score += 25;
-          if (this.particles && this.particles.burstDustCloud) {
-            this.particles.burstDustCloud(prop.x, prop.z, 10);
+          // Collapse static vertices in propsMesh
+          if (prop.chunk && prop.chunk.collapseProp) {
+            prop.chunk.collapseProp(prop);
           }
-          if (this.onPropKnocked) {
-            this.onPropKnocked(prop, hitDirX, hitDirZ);
+          // If this was an obstacle (e.g. parked car), disable it in spatialGrid
+          if (prop.obstacle) {
+            prop.obstacle.disabled = true;
+          }
+
+          if (prop.isCar) {
+            this.score += 100;
+            if (this.onCarSmashed) {
+              this.onCarSmashed(prop, hitDirX, hitDirZ);
+            }
+          } else {
+            this.score += 25;
+            if (this.onPropKnocked) {
+              this.onPropKnocked(prop, hitDirX, hitDirZ);
+            }
           }
         }
       }
@@ -2326,12 +2344,25 @@ export class EntityManager {
         const prop = props[i];
         if (!prop.knocked) {
           prop.knocked = true;
-          this.score += 25;
+          if (prop.chunk && prop.chunk.collapseProp) {
+            prop.chunk.collapseProp(prop);
+          }
+          if (prop.obstacle) {
+            prop.obstacle.disabled = true;
+          }
           const kx = prop.x - x;
           const kz = prop.z - z;
           const kd = Math.hypot(kx, kz) || 1;
-          if (this.onPropKnocked) {
-            this.onPropKnocked(prop, kx / kd, kz / kd);
+          if (prop.isCar) {
+            this.score += 100;
+            if (this.onCarSmashed) {
+              this.onCarSmashed(prop, kx / kd, kz / kd);
+            }
+          } else {
+            this.score += 25;
+            if (this.onPropKnocked) {
+              this.onPropKnocked(prop, kx / kd, kz / kd);
+            }
           }
         }
       }

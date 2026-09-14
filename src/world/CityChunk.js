@@ -81,7 +81,9 @@ export class CityChunk {
     this.lampPositions = [];    // E1: Positions for runtime PointLights
     this.firePositions = [];    // E3: Dumpster fire positions for PointLights
     this.stopLightPositions = []; // Positions for dynamic intersection Stop Lights
-    this.knockableProps = [];   // Small props (lamps, hydrants, trash cans) for Bulldozer physics
+    this.knockableProps = [];   // Small props (lamps, hydrants, trash cans, bushes, benches, cars) for Bulldozer & Titan physics
+    this.propsMesh = null;      // Direct reference to the merged props Mesh
+    this._currentPropVertexCount = 0;
 
     this.seed = hash2D(cx, cz);
     this.rng = createPRNG(this.seed);
@@ -90,6 +92,8 @@ export class CityChunk {
   }
 
   _generate() {
+    this._currentPropVertexCount = 0;
+    this.propsMesh = null;
     const roadGeoms = [];
     const markingGeoms = [];
     const sidewalkGeoms = [];
@@ -150,7 +154,7 @@ export class CityChunk {
         const fireBoxGeom = new THREE.BoxGeometry(0.8, 1.1, 0.8);
         fireBoxGeom.translate(fx, 0.55, fz);
         _tagGeomColor(fireBoxGeom, new THREE.Color(0xff4400));
-        propGeoms.push(fireBoxGeom);
+        this._pushPropGeom(fireBoxGeom, propGeoms);
         this.firePositions.push({ x: fx, z: fz });
       }
     }
@@ -239,6 +243,7 @@ export class CityChunk {
         propMesh.castShadow = true;
         propMesh.receiveShadow = true;
         this.meshes.push(propMesh);
+        this.propsMesh = propMesh;
       }
     }
 
@@ -252,6 +257,38 @@ export class CityChunk {
         this.meshes.push(puddleMesh);
       }
     }
+  }
+
+  /**
+   * Pushes a prop geometry into propGeoms while tracking its vertex offset for zero-draw-call collapsing.
+   * If propData is provided, registers it in this.knockableProps with vertexStart, vertexCount, and chunk reference.
+   */
+  _pushPropGeom(geom, propGeoms, propData = null) {
+    if (!geom) return;
+    const nonIndexed = geom.index ? geom.toNonIndexed() : geom;
+    if (propData) {
+      propData.vertexStart = this._currentPropVertexCount || 0;
+      propData.vertexCount = nonIndexed.attributes.position.count;
+      propData.chunk = this;
+      this.knockableProps.push(propData);
+    }
+    this._currentPropVertexCount = (this._currentPropVertexCount || 0) + nonIndexed.attributes.position.count;
+    propGeoms.push(nonIndexed);
+  }
+
+  /**
+   * Instantly collapses a smashed prop's vertices below ground (Y = -999.0) in propsMesh.
+   * Zero draw calls created; instant visual demolition of the static model.
+   */
+  collapseProp(prop) {
+    if (!this.propsMesh || !this.propsMesh.geometry || prop.vertexCount === undefined) return;
+    const pos = this.propsMesh.geometry.attributes.position;
+    const start = prop.vertexStart;
+    const end = prop.vertexStart + prop.vertexCount;
+    for (let i = start; i < end; i++) {
+      pos.setY(i, -999.0);
+    }
+    pos.needsUpdate = true;
   }
 
   _generateRoadMarkings(wx, wz, markingGeoms) {
@@ -415,7 +452,7 @@ export class CityChunk {
     const tileMat = new THREE.BoxGeometry(40.0, 0.04, 18.0);
     tileMat.translate(wx, plazaY, wz - 12.0);
     this._applyVertexColors(tileMat, new THREE.Color(0xdde3ea));
-    propGeoms.push(tileMat);
+    this._pushPropGeom(tileMat, propGeoms);
 
     this._addBench(wx - 8, wz - 12, 0, propGeoms);
     this._addBench(wx + 8, wz - 12, Math.PI, propGeoms);
@@ -458,18 +495,18 @@ export class CityChunk {
     const path1 = new THREE.BoxGeometry(46.0, 0.02, 3.4);
     path1.translate(wx, 0.29, wz);
     this._applyVertexColors(path1, new THREE.Color(0xdfd7c8));
-    propGeoms.push(path1);
+    this._pushPropGeom(path1, propGeoms);
 
     const path2 = new THREE.BoxGeometry(3.4, 0.02, 46.0);
     path2.translate(wx, 0.29, wz);
     this._applyVertexColors(path2, new THREE.Color(0xdfd7c8));
-    propGeoms.push(path2);
+    this._pushPropGeom(path2, propGeoms);
 
     // Central park plaza circle / fountain base
     const centerPad = new THREE.CylinderGeometry(4.5, 4.5, 0.35, 12);
     centerPad.translate(wx, 0.4, wz);
     this._applyVertexColors(centerPad, new THREE.Color(0xcfd6df));
-    propGeoms.push(centerPad);
+    this._pushPropGeom(centerPad, propGeoms);
 
     const treeOffsets = [
       { ox: -12, oz: -12 },
@@ -907,24 +944,14 @@ export class CityChunk {
     this._addStopLight(swMinX + 1.0, swMaxZ - 1.0, -Math.PI * 0.25, propGeoms);
     this._addStopLight(swMaxX - 1.0, swMaxZ - 1.0, -Math.PI * 0.75, propGeoms);
 
-    this.knockableProps.push(
-      { type: 'lamp', x: swMinX + 1.2, z: swMinZ + 1.2, radius: 0.65, knocked: false },
-      { type: 'lamp', x: swMaxX - 1.2, z: swMinZ + 1.2, radius: 0.65, knocked: false },
-      { type: 'lamp', x: swMinX + 1.2, z: swMaxZ - 1.2, radius: 0.65, knocked: false },
-      { type: 'lamp', x: swMaxX - 1.2, z: swMaxZ - 1.2, radius: 0.65, knocked: false }
-    );
-
     if (this.rng() > 0.4) {
       this._addHydrant(swMinX + 1.2, wz, propGeoms);
-      this.knockableProps.push({ type: 'hydrant', x: swMinX + 1.2, z: wz, radius: 0.55, knocked: false });
     }
     if (this.rng() > 0.4) {
       this._addHydrant(wx, swMinZ + 1.2, propGeoms);
-      this.knockableProps.push({ type: 'hydrant', x: wx, z: swMinZ + 1.2, radius: 0.55, knocked: false });
     }
     if (this.rng() > 0.4) {
       this._addTrashCan(swMaxX - 1.2, wz, propGeoms);
-      this.knockableProps.push({ type: 'trash', x: swMaxX - 1.2, z: wz, radius: 0.55, knocked: false });
     }
 
     if (this.rng() > 0.3) {
@@ -946,34 +973,32 @@ export class CityChunk {
     // Wooden park benches along perimeter sidewalks
     if (this.rng() > 0.4) {
       this._addBench(swMinX + 1.2, wz - 4.0, Math.PI / 2, propGeoms);
-      this.knockableProps.push({ type: 'bench', x: swMinX + 1.2, z: wz - 4.0, radius: 0.8, knocked: false });
     }
     if (this.rng() > 0.4) {
       this._addBench(swMaxX - 1.2, wz + 4.0, -Math.PI / 2, propGeoms);
-      this.knockableProps.push({ type: 'bench', x: swMaxX - 1.2, z: wz + 4.0, radius: 0.8, knocked: false });
     }
 
     // Wooden planters with flowers along perimeter sidewalks
     if (this.rng() > 0.45) {
       this._addPlanter(wx + 6.0, swMaxZ - 1.2, 0, propGeoms);
-      this.knockableProps.push({ type: 'planter', x: wx + 6.0, z: swMaxZ - 1.2, radius: 0.7, knocked: false });
     }
     if (this.rng() > 0.45) {
       this._addPlanter(wx - 6.0, swMinZ + 1.2, 0, propGeoms);
-      this.knockableProps.push({ type: 'planter', x: wx - 6.0, z: swMinZ + 1.2, radius: 0.7, knocked: false });
     }
   }
 
   /**
-   * Chunky cloud-style bush: Clustered green spheres with top-lit light green caps
+   * Chunky cloud-style bush / tree: Clustered green spheres with top-lit light green caps
    */
   _addTree(x, z, scale, propGeoms) {
     const s = scale || 1.0;
+    const parts = [];
+
     // Short chunky wooden trunk
     const trunk = new THREE.CylinderGeometry(0.18 * s, 0.24 * s, 0.8 * s, 6);
     trunk.translate(x, 0.4 * s + 0.22, z);
     _tagGeomColor(trunk, new THREE.Color(0x78350f));
-    propGeoms.push(trunk);
+    parts.push(trunk);
 
     // Base green sphere cluster (#15803d and #16a34a)
     const baseGreen = new THREE.Color(0x15803d);
@@ -982,22 +1007,22 @@ export class CityChunk {
     const b1 = new THREE.IcosahedronGeometry(1.2 * s, 1);
     b1.translate(x, 1.45 * s + 0.22, z);
     _tagGeomColor(b1, baseGreen);
-    propGeoms.push(b1);
+    parts.push(b1);
 
     const b2 = new THREE.IcosahedronGeometry(0.85 * s, 1);
     b2.translate(x - 0.55 * s, 1.25 * s + 0.22, z + 0.25 * s);
     _tagGeomColor(b2, midGreen);
-    propGeoms.push(b2);
+    parts.push(b2);
 
     const b3 = new THREE.IcosahedronGeometry(0.90 * s, 1);
     b3.translate(x + 0.55 * s, 1.30 * s + 0.22, z - 0.20 * s);
     _tagGeomColor(b3, baseGreen);
-    propGeoms.push(b3);
+    parts.push(b3);
 
     const b4 = new THREE.IcosahedronGeometry(0.80 * s, 1);
     b4.translate(x - 0.15 * s, 1.20 * s + 0.22, z - 0.50 * s);
     _tagGeomColor(b4, midGreen);
-    propGeoms.push(b4);
+    parts.push(b4);
 
     // Top-lit light green caps (#84cc16 and #86efac)
     const capLight = new THREE.Color(0x86efac);
@@ -1006,17 +1031,29 @@ export class CityChunk {
     const capTop = new THREE.IcosahedronGeometry(0.80 * s, 1);
     capTop.translate(x, 2.15 * s + 0.22, z);
     _tagGeomColor(capTop, capLight);
-    propGeoms.push(capTop);
+    parts.push(capTop);
 
     const capSide1 = new THREE.IcosahedronGeometry(0.58 * s, 1);
     capSide1.translate(x + 0.35 * s, 1.90 * s + 0.22, z + 0.28 * s);
     _tagGeomColor(capSide1, capLime);
-    propGeoms.push(capSide1);
+    parts.push(capSide1);
 
     const capSide2 = new THREE.IcosahedronGeometry(0.55 * s, 1);
     capSide2.translate(x - 0.35 * s, 1.85 * s + 0.22, z - 0.18 * s);
     _tagGeomColor(capSide2, capLight);
-    propGeoms.push(capSide2);
+    parts.push(capSide2);
+
+    const mergedTree = safeMergeGeometries(parts, true);
+    if (mergedTree) {
+      this._pushPropGeom(mergedTree, propGeoms, {
+        type: 'bush',
+        x,
+        z,
+        radius: 1.1 * s,
+        scale: s,
+        knocked: false,
+      });
+    }
   }
 
   /**
@@ -1028,42 +1065,55 @@ export class CityChunk {
     const plantColor = new THREE.Color(0x16a34a);
     const flowerColor1 = new THREE.Color(0xfb7185); // Salmon
     const flowerColor2 = new THREE.Color(0xfacc15); // Mustard
+    const parts = [];
 
     // Wooden planter box
     const box = new THREE.BoxGeometry(1.3, 0.42, 0.68);
     box.applyMatrix4(new THREE.Matrix4().makeRotationY(rotation));
     box.translate(x, 0.21 + 0.22, z);
     _tagGeomColor(box, woodColor);
-    propGeoms.push(box);
+    parts.push(box);
 
     // Soil bed
     const soil = new THREE.BoxGeometry(1.18, 0.04, 0.56);
     soil.applyMatrix4(new THREE.Matrix4().makeRotationY(rotation));
     soil.translate(x, 0.42 + 0.22, z);
     _tagGeomColor(soil, soilColor);
-    propGeoms.push(soil);
+    parts.push(soil);
 
     // Clustered cloud foliage on top
     const bush1 = new THREE.IcosahedronGeometry(0.35, 1);
     bush1.translate(x - 0.3, 0.58 + 0.22, z);
     _tagGeomColor(bush1, plantColor);
-    propGeoms.push(bush1);
+    parts.push(bush1);
 
     const bush2 = new THREE.IcosahedronGeometry(0.38, 1);
     bush2.translate(x + 0.25, 0.60 + 0.22, z);
     _tagGeomColor(bush2, new THREE.Color(0x86efac));
-    propGeoms.push(bush2);
+    parts.push(bush2);
 
     // Flowers
     const fl1 = new THREE.BoxGeometry(0.12, 0.12, 0.12);
     fl1.translate(x - 0.22, 0.72 + 0.22, z + 0.1);
     _tagGeomColor(fl1, flowerColor1);
-    propGeoms.push(fl1);
+    parts.push(fl1);
 
     const fl2 = new THREE.BoxGeometry(0.12, 0.12, 0.12);
     fl2.translate(x + 0.2, 0.74 + 0.22, z - 0.08);
     _tagGeomColor(fl2, flowerColor2);
-    propGeoms.push(fl2);
+    parts.push(fl2);
+
+    const mergedPlanter = safeMergeGeometries(parts, true);
+    if (mergedPlanter) {
+      this._pushPropGeom(mergedPlanter, propGeoms, {
+        type: 'planter',
+        x,
+        z,
+        radius: 0.75,
+        rotation,
+        knocked: false,
+      });
+    }
   }
 
   /**
@@ -1072,66 +1122,78 @@ export class CityChunk {
   _addStreetLamp(x, z, propGeoms) {
     const ironColor = new THREE.Color(0x1e293b);
     const bulbColor = new THREE.Color(0xfef08a);
+    const parts = [];
 
     // Flared retro base
     const base = new THREE.CylinderGeometry(0.14, 0.24, 0.48, 8);
     base.translate(x, 0.24 + 0.22, z);
     _tagGeomColor(base, ironColor);
-    propGeoms.push(base);
+    parts.push(base);
 
     // Main fluted vertical pole
     const pole = new THREE.CylinderGeometry(0.08, 0.11, 3.6, 8);
     pole.translate(x, 2.1 + 0.22, z);
     _tagGeomColor(pole, ironColor);
-    propGeoms.push(pole);
+    parts.push(pole);
 
     // Top decorative spire / finial
     const finial = new THREE.ConeGeometry(0.10, 0.32, 6);
     finial.translate(x, 4.2 + 0.22, z);
     _tagGeomColor(finial, ironColor);
-    propGeoms.push(finial);
+    parts.push(finial);
 
     // Horizontal dual cross arms extending to both sides
     const crossArm = new THREE.BoxGeometry(1.65, 0.08, 0.08);
     crossArm.translate(x, 3.95 + 0.22, z);
     _tagGeomColor(crossArm, ironColor);
-    propGeoms.push(crossArm);
+    parts.push(crossArm);
 
     // Left curved support bracket
     const leftBracket = new THREE.BoxGeometry(0.40, 0.06, 0.06);
     leftBracket.rotateZ(0.5);
     leftBracket.translate(x - 0.40, 3.75 + 0.22, z);
     _tagGeomColor(leftBracket, ironColor);
-    propGeoms.push(leftBracket);
+    parts.push(leftBracket);
 
     // Right curved support bracket
     const rightBracket = new THREE.BoxGeometry(0.40, 0.06, 0.06);
     rightBracket.rotateZ(-0.5);
     rightBracket.translate(x + 0.40, 3.75 + 0.22, z);
     _tagGeomColor(rightBracket, ironColor);
-    propGeoms.push(rightBracket);
+    parts.push(rightBracket);
 
     // Left Lantern: Hood + glowing bulb
     const hoodL = new THREE.ConeGeometry(0.22, 0.16, 6);
     hoodL.translate(x - 0.72, 3.92 + 0.22, z);
     _tagGeomColor(hoodL, ironColor);
-    propGeoms.push(hoodL);
+    parts.push(hoodL);
 
     const bulbL = new THREE.BoxGeometry(0.18, 0.18, 0.18);
     bulbL.translate(x - 0.72, 3.76 + 0.22, z);
     _tagGeomColor(bulbL, bulbColor);
-    propGeoms.push(bulbL);
+    parts.push(bulbL);
 
     // Right Lantern: Hood + glowing bulb
     const hoodR = new THREE.ConeGeometry(0.22, 0.16, 6);
     hoodR.translate(x + 0.72, 3.92 + 0.22, z);
     _tagGeomColor(hoodR, ironColor);
-    propGeoms.push(hoodR);
+    parts.push(hoodR);
 
     const bulbR = new THREE.BoxGeometry(0.18, 0.18, 0.18);
     bulbR.translate(x + 0.72, 3.76 + 0.22, z);
     _tagGeomColor(bulbR, bulbColor);
-    propGeoms.push(bulbR);
+    parts.push(bulbR);
+
+    const mergedLamp = safeMergeGeometries(parts, true);
+    if (mergedLamp) {
+      this._pushPropGeom(mergedLamp, propGeoms, {
+        type: 'lamp',
+        x,
+        z,
+        radius: 0.65,
+        knocked: false,
+      });
+    }
   }
 
   /**
@@ -1141,25 +1203,33 @@ export class CityChunk {
   _addStopLight(x, z, rotY, propGeoms) {
     const ironColor = new THREE.Color(0x111827); // Very dark metal
     const yellowBoxColor = new THREE.Color(0xf59e0b); // Warning yellow housing
+    const parts = [];
 
     // Main pole
     const pole = new THREE.CylinderGeometry(0.06, 0.08, 3.2, 8);
     pole.translate(x, 1.6 + 0.22, z);
     _tagGeomColor(pole, ironColor);
-    propGeoms.push(pole);
+    parts.push(pole);
 
     // Traffic light main housing box
     const housing = new THREE.BoxGeometry(0.4, 0.9, 0.4);
     housing.translate(0, 3.2 + 0.22, 0);
-    
-    // Rotate housing to face intersection
     housing.rotateY(rotY);
     housing.translate(x, 0, z);
     _tagGeomColor(housing, yellowBoxColor);
-    propGeoms.push(housing);
+    parts.push(housing);
 
-    // Register positions for the dynamic colored bulbs to be spawned by CityStreamer
-    // We calculate world offsets for top (Red), middle (Yellow), and bottom (Green)
+    const mergedStopLight = safeMergeGeometries(parts, true);
+    if (mergedStopLight) {
+      this._pushPropGeom(mergedStopLight, propGeoms, {
+        type: 'stoplight',
+        x,
+        z,
+        radius: 0.65,
+        knocked: false,
+      });
+    }
+
     const bulbZOffset = Math.cos(rotY) * 0.22;
     const bulbXOffset = Math.sin(rotY) * 0.22;
 
@@ -1224,26 +1294,45 @@ export class CityChunk {
     if (mergedBench) {
       mergedBench.applyMatrix4(new THREE.Matrix4().makeRotationY(rotation));
       mergedBench.translate(x, 0.22, z);
-      propGeoms.push(mergedBench);
+      this._pushPropGeom(mergedBench, propGeoms, {
+        type: 'bench',
+        x,
+        z,
+        radius: 0.85,
+        rotation,
+        knocked: false,
+      });
     }
   }
 
   _addHydrant(x, z, propGeoms) {
     const red = new THREE.Color(0xe63946);
+    const parts = [];
     const body = new THREE.CylinderGeometry(0.20, 0.24, 0.60, 8);
     body.translate(x, 0.30 + 0.22, z);
     _tagGeomColor(body, red);
-    propGeoms.push(body);
+    parts.push(body);
 
     const cap = new THREE.CylinderGeometry(0.14, 0.18, 0.25, 8);
     cap.translate(x, 0.68 + 0.22, z);
     _tagGeomColor(cap, red);
-    propGeoms.push(cap);
+    parts.push(cap);
 
     const nozzles = new THREE.BoxGeometry(0.55, 0.14, 0.14);
     nozzles.translate(x, 0.45 + 0.22, z);
     _tagGeomColor(nozzles, new THREE.Color(0xffffff));
-    propGeoms.push(nozzles);
+    parts.push(nozzles);
+
+    const mergedHydrant = safeMergeGeometries(parts, true);
+    if (mergedHydrant) {
+      this._pushPropGeom(mergedHydrant, propGeoms, {
+        type: 'hydrant',
+        x,
+        z,
+        radius: 0.55,
+        knocked: false,
+      });
+    }
   }
 
   /**
@@ -1253,24 +1342,36 @@ export class CityChunk {
     const slateColor = new THREE.Color(0x64748b);
     const rimColor = new THREE.Color(0x334155);
     const interiorColor = new THREE.Color(0x0f172a);
+    const parts = [];
 
     // Rounded tapered cylinder
     const body = new THREE.CylinderGeometry(0.28, 0.22, 0.72, 12);
     body.translate(x, 0.36 + 0.22, z);
     _tagGeomColor(body, slateColor);
-    propGeoms.push(body);
+    parts.push(body);
 
     // Top collar rim
     const collar = new THREE.CylinderGeometry(0.30, 0.30, 0.06, 12);
     collar.translate(x, 0.72 + 0.22, z);
     _tagGeomColor(collar, rimColor);
-    propGeoms.push(collar);
+    parts.push(collar);
 
     // Recessed dark opening
     const opening = new THREE.CylinderGeometry(0.22, 0.22, 0.04, 12);
     opening.translate(x, 0.74 + 0.22, z);
     _tagGeomColor(opening, interiorColor);
-    propGeoms.push(opening);
+    parts.push(opening);
+
+    const mergedTrash = safeMergeGeometries(parts, true);
+    if (mergedTrash) {
+      this._pushPropGeom(mergedTrash, propGeoms, {
+        type: 'trash',
+        x,
+        z,
+        radius: 0.55,
+        knocked: false,
+      });
+    }
   }
 
   _addDumpster(x, z, rotation, propGeoms) {
@@ -1302,7 +1403,7 @@ export class CityChunk {
     if (merged) {
       merged.applyMatrix4(new THREE.Matrix4().makeRotationY(rotation));
       merged.translate(x, 0.22, z);
-      propGeoms.push(merged);
+      this._pushPropGeom(merged, propGeoms);
     }
   }
 
@@ -1373,11 +1474,23 @@ export class CityChunk {
     if (merged) {
       merged.applyMatrix4(new THREE.Matrix4().makeRotationY(rotation));
       merged.translate(x, 0.0, z);
-      propGeoms.push(merged);
+      const obs = this._registerCarObstacle(x, z, rotation);
+      const propData = {
+        type: 'parked_car',
+        isCar: true,
+        x,
+        z,
+        radius: 2.2,
+        rotation,
+        color: carColor,
+        obstacle: obs,
+        knocked: false,
+      };
+      if (obs) {
+        obs.prop = propData;
+      }
+      this._pushPropGeom(merged, propGeoms, propData);
     }
-
-    // Register static 2D AABB collision box in spatialGrid obstacles
-    this._registerCarObstacle(x, z, rotation);
   }
 
   /**
@@ -1388,7 +1501,7 @@ export class CityChunk {
     const isRotated = Math.abs(Math.sin(rotation)) > 0.5;
     const halfW = isRotated ? 2.25 : 1.1;
     const halfD = isRotated ? 1.1 : 2.25;
-    this.obstacles.push({
+    const obs = {
       centerX: x,
       centerZ: z,
       halfW,
@@ -1398,7 +1511,10 @@ export class CityChunk {
       minZ: z - halfD,
       maxZ: z + halfD,
       isCar: true,
-    });
+      disabled: false,
+    };
+    this.obstacles.push(obs);
+    return obs;
   }
 
   _recordStreetPoints(wx, wz) {
@@ -1545,6 +1661,8 @@ export class CityChunk {
     this.lampPositions.length = 0;
     this.firePositions.length = 0;
     this.knockableProps.length = 0;
+    this.propsMesh = null;
+    this._currentPropVertexCount = 0;
   }
 }
 

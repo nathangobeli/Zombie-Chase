@@ -585,6 +585,70 @@ async function runPlaytest() {
       maxOccludedBuildings = behindBuildingOccluded;
     }
 
+    // 3b1. Test Titan Car Smashing & Prop Demolition (@designer & @qa)
+    console.log('[Playtest] Testing Titan Infected car smashing and prop demolition...');
+    const titanDestructionCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
+      const streamer = app?.cityStreamer;
+      if (!em || !streamer) return { success: false, reason: 'Engine not ready' };
+
+      // Find knockable props within active streaming area
+      const props = streamer.getNearbyKnockableProps(0, 0, 160.0);
+      const carProp = props.find(p => p.isCar && !p.knocked);
+      const bushProp = props.find(p => p.type === 'bush' && !p.knocked);
+      const lampProp = props.find(p => p.type === 'lamp' && !p.knocked);
+
+      if (!carProp || !bushProp || !lampProp) {
+        return { success: false, reason: 'Missing car, bush, or lamp props', count: props.length };
+      }
+
+      // Activate Titan mode
+      em.isTitan = true;
+      em.titanVirusTimer = 20.0;
+      em.patientZero.isTitan = true;
+
+      // 1. Smash parked car
+      em.patientZero.x = carProp.x;
+      em.patientZero.z = carProp.z;
+      em.patientZero.vx = 5.0;
+      em.patientZero.vz = 0.0;
+      em.update(0.016, { x: 1, z: 0 }, app.spatialGrid, streamer);
+
+      const carKnocked = !!carProp.knocked;
+      const carObstacleDisabled = carProp.obstacle ? !!carProp.obstacle.disabled : true;
+      const carVerticesCollapsed = carProp.chunk?.propsMesh?.geometry?.attributes?.position?.getY(carProp.vertexStart) <= -900;
+
+      // 2. Smash bush
+      em.patientZero.x = bushProp.x;
+      em.patientZero.z = bushProp.z;
+      em.update(0.016, { x: 0, z: 1 }, app.spatialGrid, streamer);
+      const bushKnocked = !!bushProp.knocked;
+      const bushVerticesCollapsed = bushProp.chunk?.propsMesh?.geometry?.attributes?.position?.getY(bushProp.vertexStart) <= -900;
+
+      // 3. Smash street lamp
+      em.patientZero.x = lampProp.x;
+      em.patientZero.z = lampProp.z;
+      em.update(0.016, { x: 1, z: 0 }, app.spatialGrid, streamer);
+      const lampKnocked = !!lampProp.knocked;
+      const lampVerticesCollapsed = lampProp.chunk?.propsMesh?.geometry?.attributes?.position?.getY(lampProp.vertexStart) <= -900;
+
+      const debrisCount = app.debrisList.length;
+
+      return {
+        success: true,
+        carKnocked,
+        carObstacleDisabled,
+        carVerticesCollapsed,
+        bushKnocked,
+        bushVerticesCollapsed,
+        lampKnocked,
+        lampVerticesCollapsed,
+        debrisCount,
+      };
+    });
+    console.log('[Playtest] Titan destruction check:', titanDestructionCheck);
+
     // Move back to clear avenue to test opacity restoration
     await page.evaluate(() => {
       const pz = window.__GAME_APP__?.entityManager?.patientZero;
@@ -1049,8 +1113,18 @@ async function runPlaytest() {
       process.exit(1);
     }
 
-    if (!boidSeparationCheck.holdsGreaterDistance) {
-      console.error('[Playtest FAILED] Boid separation parameter does not hold greater average distance:', boidSeparationCheck);
+    if (!titanDestructionCheck.success || !titanDestructionCheck.carKnocked || !titanDestructionCheck.carObstacleDisabled || !titanDestructionCheck.carVerticesCollapsed) {
+      console.error('[Playtest FAILED] Titan car demolition check failed:', titanDestructionCheck);
+      process.exit(1);
+    }
+
+    if (!titanDestructionCheck.bushKnocked || !titanDestructionCheck.bushVerticesCollapsed || !titanDestructionCheck.lampKnocked || !titanDestructionCheck.lampVerticesCollapsed) {
+      console.error('[Playtest FAILED] Titan prop smashing (bush/lamp) check failed:', titanDestructionCheck);
+      process.exit(1);
+    }
+
+    if (titanDestructionCheck.debrisCount < 3) {
+      console.error('[Playtest FAILED] Debris pieces not spawned for demolished car and props:', titanDestructionCheck);
       process.exit(1);
     }
 
