@@ -175,6 +175,7 @@ async function runPlaytest() {
         powerupsCount: app?.powerupManager?.powerups?.length || 0,
         innerRingVisible: !!renderer?.innerRing?.visible,
         outerRingVisible: !!renderer?.outerRing?.visible,
+        initialFollowerCount: app?.entityManager?.zombies?.length || 0,
       };
     });
     console.log('[Playtest] Initial state check after START OUTBREAK (Stage 1 Outbreak Dawn):', initialCheck);
@@ -635,6 +636,34 @@ async function runPlaytest() {
 
       const debrisCount = app.debrisList.length;
 
+      // 4. Shrink down from Titan: demolition MUST be completely disabled
+      em.titanVirusTimer = 0.0;
+      em.isTitan = false;
+      em.patientZero.isTitan = false;
+      em.pzVisualScale = 1.0;
+
+      // Find an untouched unknocked car and prop
+      const remainingProps = streamer.getNearbyKnockableProps(0, 0, 160.0);
+      const secondCar = remainingProps.find(p => p.isCar && !p.knocked);
+      const secondProp = remainingProps.find(p => !p.isCar && !p.knocked);
+
+      let shrunkCarRemainsIntact = true;
+      let shrunkPropRemainsIntact = true;
+
+      if (secondCar) {
+        em.patientZero.x = secondCar.x;
+        em.patientZero.z = secondCar.z;
+        em.update(0.016, { x: 1, z: 0 }, app.spatialGrid, streamer);
+        shrunkCarRemainsIntact = !secondCar.knocked;
+      }
+
+      if (secondProp) {
+        em.patientZero.x = secondProp.x;
+        em.patientZero.z = secondProp.z;
+        em.update(0.016, { x: 0, z: 1 }, app.spatialGrid, streamer);
+        shrunkPropRemainsIntact = !secondProp.knocked;
+      }
+
       return {
         success: true,
         carKnocked,
@@ -645,6 +674,7 @@ async function runPlaytest() {
         lampKnocked,
         lampVerticesCollapsed,
         debrisCount,
+        shrunkDemolitionDisabled: shrunkCarRemainsIntact && shrunkPropRemainsIntact,
       };
     });
     console.log('[Playtest] Titan destruction check:', titanDestructionCheck);
@@ -908,6 +938,8 @@ async function runPlaytest() {
     gameState.navButtonsVerified = navButtonsCheck.hasRestartBtn && navButtonsCheck.hasMenuBtn;
     gameState.restartStateVerified = restartStateCheck.gameState === 'STATE_PLAYING';
     gameState.menuReturnVerified = menuReturnCheck.gameState === 'STATE_MENU';
+    gameState.zeroInitialFollowersVerified = initialCheck.initialFollowerCount === 0;
+    gameState.shrunkDemolitionDisabledVerified = !!titanDestructionCheck.shrunkDemolitionDisabled;
 
     // Merge any page-level uncaught errors
     if (pageErrors.length > 0) {
@@ -1123,8 +1155,13 @@ async function runPlaytest() {
       process.exit(1);
     }
 
-    if (titanDestructionCheck.debrisCount < 3) {
-      console.error('[Playtest FAILED] Debris pieces not spawned for demolished car and props:', titanDestructionCheck);
+    if (initialCheck.initialFollowerCount !== 0) {
+      console.error(`[Playtest FAILED] Game must start with 0 zombie followers (found ${initialCheck.initialFollowerCount}).`);
+      process.exit(1);
+    }
+
+    if (!titanDestructionCheck.shrunkDemolitionDisabled) {
+      console.error('[Playtest FAILED] After shrinking down from Titan, demolition must be completely disabled.');
       process.exit(1);
     }
 

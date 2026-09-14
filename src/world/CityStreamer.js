@@ -186,8 +186,8 @@ export class CityStreamer {
       return { x: nearX + 30, z: nearZ + 30 };
     }
 
-    // Attempt candidate points
-    for (let attempt = 0; attempt < 8; attempt++) {
+    // Attempt candidate points across active chunks
+    for (let attempt = 0; attempt < 16; attempt++) {
       const randKey = activeKeys[Math.floor(Math.random() * activeKeys.length)];
       const chunk = this.activeChunks.get(randKey);
       if (!chunk || chunk.streetSpawnPoints.length === 0) continue;
@@ -202,14 +202,13 @@ export class CityStreamer {
       }
     }
 
-    // Fallback: pick any street point in any active chunk
-    const chunk = this.activeChunks.get(activeKeys[Math.floor(Math.random() * activeKeys.length)]);
-    if (chunk && chunk.streetSpawnPoints.length > 0) {
-      const pt = chunk.streetSpawnPoints[0];
-      return { x: pt.x, z: pt.z };
-    }
-
-    return { x: nearX + 40, z: nearZ + 40 };
+    // Guaranteed fallback: compute a safe offset position respecting minRadius
+    const angle = Math.random() * Math.PI * 2;
+    const rad = minRadius + Math.random() * Math.max(10, maxRadius - minRadius);
+    return {
+      x: nearX + Math.cos(angle) * rad,
+      z: nearZ + Math.sin(angle) * rad,
+    };
   }
 
   /**

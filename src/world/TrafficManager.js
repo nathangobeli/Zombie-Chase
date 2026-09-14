@@ -349,7 +349,7 @@ export class TrafficManager {
         // Patient Zero has recovery invulnerability: vehicle passes cleanly without pinning
         // Still check follower casualties below
       } else if (pzDistSq < 3.2 * 3.2) {
-        if (entityManager && entityManager.isTitan) {
+        if (entityManager && entityManager.isTitan && entityManager.titanVirusTimer > 0) {
           // TITAN VIRUS EXPLOSIVE DEMOLITION: Vehicle detonates into flying fireball & debris
           v.active = false;
           v.isCrushed = false;

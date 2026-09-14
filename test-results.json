@@ -11,7 +11,7 @@
   "civiliansSlipped": 0,
   "slimePuddlesActive": 0,
   "isSqueeze": false,
-  "fps": 13,
+  "fps": 14,
   "hazmatDamageDealt": 0,
   "occludedBuildingsCount": 0,
   "score": 100,
@@ -34,12 +34,12 @@
     "z": 0
   },
   "maxOccludedBuildings": 1,
-  "maxHordeCount": 130,
+  "maxHordeCount": 189,
   "maxMilitaryCount": 2,
   "maxWardensCount": 3,
-  "maxSlimeCount": 7,
+  "maxSlimeCount": 15,
   "maxPzVisualScale": 3,
-  "maxHazmatDamage": 40.41,
+  "maxHazmatDamage": 27.46,
   "squeezeVerified": true,
   "initialsVerified": true,
   "leaderboardVerified": true,
@@ -53,5 +53,7 @@
   "trafficHazardVerified": true,
   "navButtonsVerified": true,
   "restartStateVerified": true,
-  "menuReturnVerified": true
+  "menuReturnVerified": true,
+  "zeroInitialFollowersVerified": true,
+  "shrunkDemolitionDisabledVerified": true
 }

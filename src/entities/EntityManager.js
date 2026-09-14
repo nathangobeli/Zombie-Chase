@@ -189,38 +189,28 @@ export class EntityManager {
       return this.cityStreamer.getRandomStreetPosition(px, pz, minDist, maxDist);
     }
 
-    let x, z;
-    const roll = Math.random();
-    if (roll < 0.45) {
-      if (Math.random() < 0.5) {
-        x = (Math.random() - 0.5) * 8.0;
-        z = (Math.random() - 0.5) * 60.0;
-      } else {
-        z = (Math.random() - 0.5) * 8.0;
-        x = (Math.random() - 0.5) * 60.0;
-      }
-    } else if (roll < 0.75) {
-      const street = Math.random() < 0.5 ? 28 : -28;
-      if (Math.random() < 0.5) {
-        x = street + (Math.random() - 0.5) * 5.0;
-        z = (Math.random() - 0.5) * 60.0;
-      } else {
-        z = street + (Math.random() - 0.5) * 5.0;
-        x = (Math.random() - 0.5) * 60.0;
-      }
-    } else {
-      const parkSign = Math.random() < 0.5 ? -1 : 1;
-      x = parkSign * 24 + (Math.random() - 0.5) * 8.0;
-      z = -parkSign * 15 + (Math.random() - 0.5) * 12.0;
-    }
-    return { x, z };
+    const px = this.patientZero ? this.patientZero.x : 0;
+    const pz = this.patientZero ? this.patientZero.z : 0;
+    const angle = Math.random() * Math.PI * 2;
+    const rad = minDist + Math.random() * (maxDist - minDist);
+    return {
+      x: px + Math.cos(angle) * rad,
+      z: pz + Math.sin(angle) * rad,
+    };
   }
 
   spawnCivilian(x, z) {
     if (x === undefined || z === undefined) {
-      const pos = this._getRandomStreetPosition();
-      x = pos.x;
-      z = pos.z;
+      let attempts = 0;
+      let pos;
+      const pzX = this.patientZero ? this.patientZero.x : 0;
+      const pzZ = this.patientZero ? this.patientZero.z : 0;
+      do {
+        pos = this._getRandomStreetPosition(25, 90);
+        attempts++;
+      } while (pos && Math.hypot(pos.x - pzX, pos.z - pzZ) < 22.0 && attempts < 15);
+      x = pos ? pos.x : pzX + 35;
+      z = pos ? pos.z : pzZ + 35;
     }
 
     // Speed scales dynamically with current panic level
@@ -249,9 +239,16 @@ export class EntityManager {
 
   spawnStrayZombie(x, z) {
     if (x === undefined || z === undefined) {
-      const pos = this._getRandomStreetPosition();
-      x = pos.x;
-      z = pos.z;
+      let attempts = 0;
+      let pos;
+      const pzX = this.patientZero ? this.patientZero.x : 0;
+      const pzZ = this.patientZero ? this.patientZero.z : 0;
+      do {
+        pos = this._getRandomStreetPosition(35, 95);
+        attempts++;
+      } while (pos && Math.hypot(pos.x - pzX, pos.z - pzZ) < 32.0 && attempts < 15);
+      x = pos ? pos.x : pzX + 45;
+      z = pos ? pos.z : pzZ + 45;
     }
 
     const stray = {
@@ -970,15 +967,20 @@ export class EntityManager {
 
       // Total conversion stomp (3.8m radius instant infection)
       this._performTitanStomp(pz.x, pz.z);
-    } else if (this.isTitan) {
-      this.pzVisualScale += (1.0 - this.pzVisualScale) * (dt * 5.5);
-      if (Math.abs(this.pzVisualScale - 1.0) < 0.05) {
-        this.pzVisualScale = 1.0;
-        this.isTitan = false;
-        if (this.particles && this.particles.burstTitanPuff) {
-          this.particles.burstTitanPuff(pz.x, pz.z);
+    } else {
+      // Titan virus duration expired: immediately exit Titan demolition state
+      this.isTitan = false;
+
+      // Smoothly shrink down visual model back to normal size
+      if (this.pzVisualScale > 1.0) {
+        this.pzVisualScale += (1.0 - this.pzVisualScale) * (dt * 5.5);
+        if (Math.abs(this.pzVisualScale - 1.0) < 0.05) {
+          this.pzVisualScale = 1.0;
+          if (this.particles && this.particles.burstTitanPuff) {
+            this.particles.burstTitanPuff(pz.x, pz.z);
+          }
+          if (this.onTitanExpired) this.onTitanExpired();
         }
-        if (this.onTitanExpired) this.onTitanExpired();
       }
     }
 
@@ -994,8 +996,8 @@ export class EntityManager {
     // Resolve building obstacle collisions for Patient Zero
     const pzPrevX = pz.x - pz.vx * dt;
     const pzPrevZ = pz.z - pz.vz * dt;
-    pz.isTitan = !!this.isTitan;
-    spatialGrid.resolveObstacles(pz, pz.radius * (this.isTitan ? 1.8 : 1.0), true, pzPrevX, pzPrevZ);
+    pz.isTitan = !!(this.isTitan && this.titanVirusTimer > 0);
+    spatialGrid.resolveObstacles(pz, pz.radius * (pz.isTitan ? 1.8 : 1.0), true, pzPrevX, pzPrevZ);
 
     // 4. Populate Spatial Grid
     spatialGrid.clear();
@@ -1943,41 +1945,19 @@ export class EntityManager {
       }
     }
 
-    // 11. Bulldozer & Titan Physics: Titan OR Horde >= 20 knocks down small street props & parked cars
-    const totalSwarm = this.zombies.length + 1;
-    if ((this.isTitan || totalSwarm >= 20) && this.cityStreamer && this.cityStreamer.getNearbyKnockableProps) {
-      const checkRadius = this.isTitan ? 16.0 : 14.0;
+    // 11. Titan Demolition Physics: ONLY when actively in the Titan state (this.isTitan && this.titanVirusTimer > 0)
+    const isActivelyTitan = this.isTitan && this.titanVirusTimer > 0;
+    if (isActivelyTitan && this.cityStreamer && this.cityStreamer.getNearbyKnockableProps) {
+      const checkRadius = 16.0;
       const nearbyProps = this.cityStreamer.getNearbyKnockableProps(pz.x, pz.z, checkRadius);
       for (let pi = 0; pi < nearbyProps.length; pi++) {
         const prop = nearbyProps[pi];
         if (prop.knocked) continue;
 
-        let hit = false;
-        let hitDirX = pz.vx || 0;
-        let hitDirZ = pz.vz || 0;
-
-        // Titan reach is much wider (~3.2m), bulldozer PZ reach is ~1.5m
-        const pzReach = this.isTitan ? 3.0 : (pz.radius + 0.4);
+        // Titan reach is ~3.0m
+        const pzReach = 3.0;
         const pzDist = Math.hypot(prop.x - pz.x, prop.z - pz.z);
         if (pzDist <= prop.radius + pzReach) {
-          hit = true;
-        }
-
-        // Swarm followers can only knock non-car props if totalSwarm >= 20
-        if (!hit && totalSwarm >= 20 && !prop.isCar) {
-          for (let zi = 0; zi < this.zombies.length; zi++) {
-            const z = this.zombies[zi];
-            const zd = Math.hypot(prop.x - z.x, prop.z - z.z);
-            if (zd <= prop.radius + z.radius + 0.4) {
-              hit = true;
-              hitDirX = z.vx || 1;
-              hitDirZ = z.vz || 0;
-              break;
-            }
-          }
-        }
-
-        if (hit) {
           prop.knocked = true;
           // Collapse static vertices in propsMesh
           if (prop.chunk && prop.chunk.collapseProp) {
@@ -1988,6 +1968,8 @@ export class EntityManager {
             prop.obstacle.disabled = true;
           }
 
+          const hitDirX = pz.vx || 0;
+          const hitDirZ = pz.vz || 0;
           if (prop.isCar) {
             this.score += 100;
             if (this.onCarSmashed) {

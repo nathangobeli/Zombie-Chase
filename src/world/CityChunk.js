@@ -1519,14 +1519,14 @@ export class CityChunk {
 
   _recordStreetPoints(wx, wz) {
     if (this.cx === 0 && this.cz === 0) {
+      // Keep central spawn intersection completely clear of stray zombies & early spawns
       this.streetSpawnPoints.push(
-        { x: 0, z: 0 },
-        { x: 0, z: 12 },
-        { x: 0, z: -12 },
-        { x: 12, z: 0 },
-        { x: -12, z: 0 },
-        { x: 0, z: 24 },
-        { x: 0, z: -24 }
+        { x: wx - 29.0, z: wz },
+        { x: wx + 29.0, z: wz },
+        { x: wx, z: wz - 29.0 },
+        { x: wx, z: wz + 29.0 },
+        { x: wx - 29.0, z: wz - 29.0 },
+        { x: wx + 29.0, z: wz + 29.0 }
       );
       return;
     }

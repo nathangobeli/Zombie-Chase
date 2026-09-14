@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.2] - 2026-09-13 — "Spawn Balancing & Titan Demolition Exclusivity"
+
+### Changed — Zero Initial Follower Guarantee (@designer & @qa)
+- **Clear Starting Intersection** (`CityChunk.js`):
+  - Removed central intersection origin points `(0, 0)`, `(0, ±12)`, and `(±12, 0)` from chunk `(0, 0)`'s `streetSpawnPoints` list. All starting spawn points are pushed to avenue margins (`±29m`).
+- **Safe Distance Spawning** (`CityStreamer.js`, `EntityManager.js`):
+  - `getRandomStreetPosition` fallback now calculates guaranteed safe offset radius (`35m..90m`) from the player.
+  - `spawnStrayZombie` strictly enforces `minDist >= 32m` from Patient Zero, preventing accidental day-one recruitment.
+  - `spawnCivilian` strictly enforces `minDist >= 22m` from Patient Zero.
+  - Validated that Patient Zero always starts with 0 zombie followers (`initialFollowerCount === 0`).
+
+### Changed — Titan Demolition Exclusivity (@designer & @qa)
+- **Active Titan State Demolition Only** (`EntityManager.js`, `SpatialGrid.js`, `TrafficManager.js`):
+  - Parked cars, moving vehicles, and street props (lamps, bushes, benches, hydrants) can **ONLY** be broken or demolished while actively in the Titan state (`isTitan === true && titanVirusTimer > 0`).
+  - Removed all `totalSwarm >= 20` non-Titan bulldozer demolition overrides and minion prop knocking.
+  - As soon as `titanVirusTimer <= 0`, `isTitan` and `pz.isTitan` are immediately cleared to `false` while the character model smoothly scales down to 1.0.
+  - Confirmed via automated playtest assertions that after shrinking down from Titan form, colliding with cars or props causes zero damage, zero collapsing, and zero demolition.
+
+---
+
 ## [2.9.1] - 2026-09-13 — "GitHub Pages CI/CD & Project Documentation Overhaul"
 
 ### Added — Repository CI/CD & Documentation
