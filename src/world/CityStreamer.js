@@ -17,6 +17,10 @@ export class CityStreamer {
     this.lastPlayerCx = null;
     this.lastPlayerCz = null;
 
+    // Callbacks for dynamic chunk events (e.g. quarantine garrison spawning)
+    this.onChunkLoaded = null;
+    this.onChunkUnloaded = null;
+
     // Discrete 3-step cel-shading gradient map
     this.celGradientMap = createCelGradientMap();
 
@@ -137,9 +141,17 @@ export class CityStreamer {
     }
 
     this.activeChunks.set(chunk.key, chunk);
+
+    if (this.onChunkLoaded) {
+      this.onChunkLoaded(chunk);
+    }
   }
 
   _unloadChunk(key, chunk, spatialGrid) {
+    if (this.onChunkUnloaded) {
+      this.onChunkUnloaded(key, chunk);
+    }
+
     // 1. Free WebGL buffers and remove from scene
     chunk.dispose(this.scene);
 
@@ -292,10 +304,24 @@ export class CityStreamer {
   }
 
   /**
+   * Updates holographic pulse and warning billboard animations on active quarantine chunks.
+   */
+  updateQuarantineAnimations(time, dt) {
+    for (const chunk of this.activeChunks.values()) {
+      if (chunk.isQuarantineZone && chunk.updateQuarantineVisuals) {
+        chunk.updateQuarantineVisuals(time, dt);
+      }
+    }
+  }
+
+  /**
    * Cleans up all active chunks.
    */
   clear(spatialGrid = null) {
     for (const [key, chunk] of this.activeChunks) {
+      if (this.onChunkUnloaded) {
+        this.onChunkUnloaded(key, chunk);
+      }
       chunk.dispose(this.scene);
       if (spatialGrid) {
         spatialGrid.removeChunkObstacles(key);

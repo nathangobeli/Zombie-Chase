@@ -232,6 +232,7 @@ export class PowerupManager {
     this.powerups.push({
       x, z,
       type: typeDef,
+      typeId: typeDef.id,
       badgeMesh,
       canisterMesh,
       ringMesh,

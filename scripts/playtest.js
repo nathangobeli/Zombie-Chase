@@ -698,20 +698,20 @@ async function runPlaytest() {
       em.zombies = [{ id: 999, type: 'zombie', x: 0, z: -1, vx: 0, vz: 0, radius: 0.5, sprayExposure: 0 }];
       em.patientZero.isSpraySlowed = false;
       em.pzSprayTime = 0;
-      if (em.onPatientZeroSprayed) em.onPatientZeroSprayed(0.016, 0.0, 5.0);
+      if (em.onPatientZeroSprayed) em.onPatientZeroSprayed(0.016, 0.0, 3.5);
       const mistWidget = document.getElementById('mist-countdown-widget');
       const widgetHiddenWithHorde = !mistWidget || mistWidget.classList.contains('hidden');
 
-      // Case B: Horde === 0: Last Stand mist exposure activates
+      // Case B: Horde === 0: Last Stand mist exposure activates (3.5s max window)
       em.zombies = [];
-      em.pzSprayTime = 2.5;
-      if (em.onPatientZeroSprayed) em.onPatientZeroSprayed(0.5, 2.5 / 5.0, 2.5);
+      em.pzSprayTime = 1.5;
+      if (em.onPatientZeroSprayed) em.onPatientZeroSprayed(0.5, 1.5 / 3.5, 2.0);
       const timerText = document.getElementById('mist-timer-text')?.textContent;
       const widgetVisibleOnLastStand = mistWidget && !mistWidget.classList.contains('hidden');
 
       // Reset
       em.pzSprayTime = 0;
-      if (em.onPatientZeroSprayed) em.onPatientZeroSprayed(0.016, 0.0, 5.0);
+      if (em.onPatientZeroSprayed) em.onPatientZeroSprayed(0.016, 0.0, 3.5);
 
       return {
         widgetHiddenWithHorde,
@@ -723,6 +723,158 @@ async function runPlaytest() {
 
     const hazmatAfterMist = await page.evaluate(() => window.__GAME_STATE__?.hazmatDamageDealt || window.__GAME_APP__?.hazmatDamageDealt || 0);
     if (hazmatAfterMist > maxHazmatDamage) maxHazmatDamage = hazmatAfterMist;
+
+    // 3b3. QA Check: Faster Hazmat Decontamination & Last Stand Calibration (@designer & @qa)
+    console.log('[Playtest] Testing Faster Hazmat Decontamination & Last Stand Calibration...');
+    const decontamCheck = await page.evaluate(() => {
+      const em = window.__GAME_APP__?.entityManager;
+      if (!em) return { success: false, reason: 'no entityManager' };
+
+      // Assert followerCureThreshold is 0.55s
+      const followerThreshold = em.followerCureThreshold;
+      
+      // Test follower cure within 0.55s continuous exposure
+      em.zombies = [{
+        id: 8888,
+        type: 'zombie',
+        x: 0,
+        z: 0,
+        vx: 0,
+        vz: 0,
+        radius: 0.5,
+        sprayExposure: 0,
+      }];
+      const initialCivCount = em.civilians.length;
+
+      // Simulate spray exposure accumulation under threshold (0.45s)
+      em.zombies[0].sprayExposure = 0.45;
+      const notCuredYet = em.zombies.length === 1;
+
+      // Advance exposure to 0.55s threshold
+      em.zombies[0].sprayExposure = 0.55;
+      em.cureZombieToCivilian(0);
+      const curedSuccessfully = em.zombies.length === 0 && em.civilians.length === initialCivCount + 1;
+      const newCiv = em.civilians[em.civilians.length - 1];
+      const hasCureImmunity = newCiv && Math.abs(newCiv.cureImmunity - 2.5) < 0.05;
+
+      return {
+        followerThreshold,
+        notCuredYet,
+        curedSuccessfully,
+        hasCureImmunity,
+        success: followerThreshold === 0.55 && notCuredYet && curedSuccessfully && hasCureImmunity,
+      };
+    });
+    console.log('[Playtest] Hazmat decontamination calibration check:', decontamCheck);
+
+    // 3b4. QA Check: Fortified Quarantine Zone Instantiation & 60 FPS Performance (@designer, @artist & @qa)
+    console.log('[Playtest] Testing Fortified Quarantine Zone instantiation & 60 FPS performance...');
+    const quarantineFortressCheck = await page.evaluate(async () => {
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
+      if (!em) return { success: false, reason: 'no entityManager' };
+
+      // Spawn or locate a Fortified Quarantine Outpost
+      const zone = em.spawnQuarantineOutpost(120, 120);
+      if (!zone) return { success: false, reason: 'failed to register zone' };
+
+      // Count stationed garrison units
+      const garrisonHazmats = em.hazmats.filter(h => h.quarantineZoneKey === zone.chunkKey);
+      const garrisonMilitary = em.militaryUnits.filter(m => m.quarantineZoneKey === zone.chunkKey);
+      const captiveCivilians = em.civilians.filter(c => c.quarantineZoneKey === zone.chunkKey && c.isCaptive);
+
+      const hasHazmatGarrison = garrisonHazmats.length >= 4 && garrisonHazmats.length <= 6;
+      const hasMilitaryGarrison = garrisonMilitary.length >= 2 && garrisonMilitary.length <= 3;
+      const hasCaptiveCivilians = captiveCivilians.length >= 8 && captiveCivilians.length <= 12;
+
+      // Check perimeter visuals
+      const chunk = zone.chunk;
+      const hasRingMesh = !!(chunk && chunk.quarantineRingMesh);
+      const hasBannerSprite = !!(chunk && chunk.quarantineBannerSprite);
+      const ringRadius = chunk?.quarantineRadius || 16.0;
+
+      // Sample FPS over active frames
+      let frameCount = 0;
+      const startT = performance.now();
+      while (frameCount < 25) {
+        await new Promise(r => requestAnimationFrame(r));
+        frameCount++;
+      }
+      const elapsed = performance.now() - startT;
+      const fps = (frameCount / elapsed) * 1000;
+
+      return {
+        zoneKey: zone.chunkKey,
+        hazmatCount: garrisonHazmats.length,
+        militaryCount: garrisonMilitary.length,
+        captiveCount: captiveCivilians.length,
+        hasHazmatGarrison,
+        hasMilitaryGarrison,
+        hasCaptiveCivilians,
+        hasRingMesh,
+        hasBannerSprite,
+        ringRadius,
+        fps: Math.round(fps),
+        fpsOk: fps >= 45,
+        success: hasHazmatGarrison && hasMilitaryGarrison && hasCaptiveCivilians && hasRingMesh && hasBannerSprite,
+      };
+    });
+    console.log('[Playtest] Fortified Quarantine Zone instantiation check:', quarantineFortressCheck);
+
+    // 3b5. QA Check: Quarantine Outpost Breach & Overrun Reward Mechanics (@designer & @qa)
+    console.log('[Playtest] Testing Quarantine Outpost Overrun victory & rewards...');
+    const quarantineOverrunCheck = await page.evaluate(async () => {
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
+      const pm = app?.powerupManager;
+      if (!em || !pm) return { success: false, reason: 'missing managers' };
+
+      const zone = em.quarantineZones.get(em.quarantineZones.keys().next().value);
+      if (!zone) return { success: false, reason: 'no active zone' };
+
+      const scoreBefore = em.score;
+      const powerupsBefore = pm.powerups.length;
+
+      // Eliminate garrison units to trigger overrun victory
+      em.hazmats = em.hazmats.filter(h => h.quarantineZoneKey !== zone.chunkKey);
+      em.militaryUnits = em.militaryUnits.filter(m => m.quarantineZoneKey !== zone.chunkKey);
+
+      // Trigger zone evaluation
+      em._updateQuarantineZones(0.016);
+
+      const scoreAfter = em.score;
+      const scoreDelta = scoreAfter - scoreBefore;
+      const isOverrun = zone.isOverrun === true;
+
+      // Check freed civilians
+      const freedCivilians = em.civilians.filter(c => c.quarantineZoneKey === zone.chunkKey);
+      const allFreed = freedCivilians.length > 0 && freedCivilians.every(c => !c.isCaptive && c.cureImmunity === 0);
+
+      // Check guaranteed high-tier powerup drop
+      const newPowerups = pm.powerups.slice(powerupsBefore);
+      const droppedCanister = newPowerups.find(p => {
+        const tid = p.typeId || p.type?.id || p.type;
+        return tid === 'titan_virus' || tid === 'meat_magnet';
+      });
+      const hasGuaranteedDrop = !!droppedCanister;
+
+      // Check screen banner
+      const bannerEl = document.getElementById('quarantine-banner');
+      const bannerActive = bannerEl && !bannerEl.classList.contains('hidden');
+
+      return {
+        isOverrun,
+        scoreDelta,
+        scoreBonusAwarded: scoreDelta === 1500,
+        freedCount: freedCivilians.length,
+        allFreed,
+        hasGuaranteedDrop,
+        droppedType: droppedCanister?.typeId || droppedCanister?.type?.id || droppedCanister?.type,
+        bannerActive,
+        success: isOverrun && scoreDelta === 1500 && allFreed && hasGuaranteedDrop,
+      };
+    });
+    console.log('[Playtest] Quarantine Overrun victory check:', quarantineOverrunCheck);
 
     // 3c. Test Horde Loss / Alone & Hunted Survival Countdown and Game Over (@designer)
     console.log('[Playtest] Testing Horde Loss & Alone Survival Countdown...');
@@ -1162,6 +1314,21 @@ async function runPlaytest() {
 
     if (!titanDestructionCheck.shrunkDemolitionDisabled) {
       console.error('[Playtest FAILED] After shrinking down from Titan, demolition must be completely disabled.');
+      process.exit(1);
+    }
+
+    if (!decontamCheck.success) {
+      console.error('[Playtest FAILED] Hazmat decontamination timing check failed:', decontamCheck);
+      process.exit(1);
+    }
+
+    if (!quarantineFortressCheck.success) {
+      console.error('[Playtest FAILED] Quarantine Fortress instantiation check failed:', quarantineFortressCheck);
+      process.exit(1);
+    }
+
+    if (!quarantineOverrunCheck.success) {
+      console.error('[Playtest FAILED] Quarantine Fortress overrun rewards check failed:', quarantineOverrunCheck);
       process.exit(1);
     }
 

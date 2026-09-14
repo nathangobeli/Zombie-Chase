@@ -93,9 +93,11 @@ class GameApp {
     this.drawCallsEl = document.getElementById('draw-calls');
     this.toastEl = document.getElementById('toast-banner');
     this.stageBannerEl = document.getElementById('stage-banner');
+    this.quarantineBannerEl = document.getElementById('quarantine-banner');
     this.currentStage = 1;
     this.stageName = 'STAGE 1: OUTBREAK DAWN';
     this._stageBannerTimer = null;
+    this._quarantineBannerTimer = null;
     this.frenzyBtn = document.getElementById('btn-frenzy');
     this.cooldownCircle = document.getElementById('cooldown-circle');
     this.cooldownCircumference = 2 * Math.PI * 44; // ~276.46
@@ -289,7 +291,6 @@ class GameApp {
 
     // 2. Infinite Procedural City Streamer (5x5 chunk window = 320x320m active area)
     this.cityStreamer = new CityStreamer(this.scene, { renderDistance: 2 });
-    this.cityStreamer.init(0, 0, this.spatialGrid);
 
     // 3. Particles, Character Instanced Renderer, Entity Manager, and Powerup Manager
     this.particles = new ParticleSystem(this.scene, 700);
@@ -298,6 +299,18 @@ class GameApp {
     this.entityManager.cityStreamer = this.cityStreamer;
     this.entityManager.scene = this.scene;
     this.entityManager.particles = this.particles;
+
+    // Connect procedural quarantine chunk streaming to entity garrison lifecycle
+    this.cityStreamer.onChunkLoaded = (chunk) => {
+      if (chunk.isQuarantineZone) {
+        this.entityManager.registerQuarantineZone(chunk);
+      }
+    };
+    this.cityStreamer.onChunkUnloaded = (chunkKey) => {
+      this.entityManager.unregisterQuarantineZone(chunkKey);
+    };
+
+    this.cityStreamer.init(0, 0, this.spatialGrid);
     this.powerupManager = new PowerupManager(this.scene);
 
     // 4. Audio System (E6)
@@ -664,7 +677,7 @@ class GameApp {
           const circumference = 163.36; // 2 * Math.PI * 26
           const offset = circumference * (1.0 - progress);
           this.mistRingFillEl.style.strokeDashoffset = offset;
-          this.mistTimerTextEl.textContent = (timeLeft !== undefined ? timeLeft : 5.0).toFixed(1) + 's';
+          this.mistTimerTextEl.textContent = (timeLeft !== undefined ? timeLeft : 3.5).toFixed(1) + 's';
         } else {
           this.mistWidgetEl.classList.add('hidden');
         }
@@ -823,6 +836,22 @@ class GameApp {
       this.stageName = stageName;
       this._showStageBanner(stageName);
     };
+
+    // Fortified Quarantine Outpost Overrun Breach Event (@designer, @artist & @qa)
+    this.entityManager.onQuarantineOverrun = (zone, rewardType, freedCount) => {
+      this._showQuarantineBanner(rewardType, freedCount);
+      if (this.powerupManager) {
+        this.powerupManager.spawnPowerup(zone.center.x, zone.center.z, rewardType);
+      }
+      this._showFloatingText('🚨 +1,500 OVERRUN!', zone.center.x, zone.center.z, 'fct-frenzy');
+      if (this.audioSystem) {
+        this.audioSystem.playHighScoreFanfare();
+        this.audioSystem.playExplosion();
+      }
+      if (this.cameraController) {
+        this.cameraController.triggerShake(0.35, 0.5);
+      }
+    };
   }
 
   _showStageBanner(text) {
@@ -837,6 +866,24 @@ class GameApp {
         this.stageBannerEl.classList.add('hidden');
       }
     }, 3200);
+  }
+
+  _showQuarantineBanner(rewardType, freedCount) {
+    if (!this.quarantineBannerEl) return;
+    const rewardName = rewardType === 'titan_virus' ? 'TITAN VIRUS' : 'MEAT MAGNET';
+    const subEl = this.quarantineBannerEl.querySelector('.quarantine-banner-sub');
+    if (subEl) {
+      subEl.textContent = `+1,500 PTS • ${freedCount} CIVILIANS LIBERATED • ${rewardName} DROPPED`;
+    }
+    this.quarantineBannerEl.classList.remove('hidden');
+    this.quarantineBannerEl.classList.add('quarantine-banner-active');
+    if (this._quarantineBannerTimer) clearTimeout(this._quarantineBannerTimer);
+    this._quarantineBannerTimer = setTimeout(() => {
+      if (this.quarantineBannerEl) {
+        this.quarantineBannerEl.classList.remove('quarantine-banner-active');
+        this.quarantineBannerEl.classList.add('hidden');
+      }
+    }, 4200);
   }
 
   _showFloatingText(text, worldX, worldZ, colorClass = '') {
@@ -1078,6 +1125,10 @@ class GameApp {
     if (this.sprayDangerOverlayEl) {
       this.sprayDangerOverlayEl.style.opacity = '0';
     }
+    if (this.quarantineBannerEl) {
+      this.quarantineBannerEl.classList.remove('quarantine-banner-active');
+      this.quarantineBannerEl.classList.add('hidden');
+    }
 
     for (const d of this.debrisList) {
       this.scene.remove(d.mesh);
@@ -1152,6 +1203,10 @@ class GameApp {
     if (this.stageBannerEl) {
       this.stageBannerEl.classList.remove('stage-banner-active');
       this.stageBannerEl.classList.add('hidden');
+    }
+    if (this.quarantineBannerEl) {
+      this.quarantineBannerEl.classList.remove('quarantine-banner-active');
+      this.quarantineBannerEl.classList.add('hidden');
     }
     if (this.standaloneLeaderboardModalEl) {
       this.standaloneLeaderboardModalEl.style.display = 'none';
@@ -1823,6 +1878,9 @@ class GameApp {
 
       // E1/E3: Update street lamp + fire PointLights from active chunks
       this._updateEnvironmentLights(pz.x, pz.z, timeSec);
+
+      // Fortified Quarantine Outpost pulsing holographic ring & warning billboard
+      this.cityStreamer.updateQuarantineAnimations(timeSec, dt);
 
       // E6: Update audio panic level
       this.audioSystem.update(panic);

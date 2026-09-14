@@ -85,6 +85,17 @@ export class CityChunk {
     this.propsMesh = null;      // Direct reference to the merged props Mesh
     this._currentPropVertexCount = 0;
 
+    // Quarantine Zone parameters (@designer & @artist)
+    this.isQuarantineZone = false;
+    this.quarantineRadius = 16.0;
+    this.quarantineCenter = null;
+    this.quarantineOverrun = false;
+    this.quarantineRingMesh = null;
+    this.quarantineBannerSprite = null;
+    this.quarantineSandbagPositions = [];
+    this.forceQuarantineZone = !!(options && options.forceQuarantineZone);
+    this._overrunTime = 0;
+
     this.seed = hash2D(cx, cz);
     this.rng = createPRNG(this.seed);
 
@@ -462,6 +473,11 @@ export class CityChunk {
     this._addTree(wx + 14, wz - 12, 1.1, propGeoms);
     this._addTree(wx - 14, wz - 6, 0.95, propGeoms);
     this._addTree(wx + 14, wz - 6, 0.95, propGeoms);
+
+    // Procedural Quarantine Zone (~15% of plaza chunks, skip chunk 0,0)
+    if (this.forceQuarantineZone || ((this.cx !== 0 || this.cz !== 0) && this.rng() < 0.15)) {
+      this._generateQuarantineZone(wx, wz - 12.0, propGeoms);
+    }
   }
 
   _generateParkBlock(wx, wz, sidewalkGeoms, parkGrassGeoms, propGeoms) {
@@ -529,6 +545,213 @@ export class CityChunk {
     this._addBench(wx + 5.5, wz, -Math.PI / 2, propGeoms);
     this._addBench(wx, wz - 5.5, 0, propGeoms);
     this._addBench(wx, wz + 5.5, Math.PI, propGeoms);
+
+    // Procedural Quarantine Zone (~15% of park chunks, skip chunk 0,0)
+    if (this.forceQuarantineZone || ((this.cx !== 0 || this.cz !== 0) && this.rng() < 0.15)) {
+      this._generateQuarantineZone(wx, wz, propGeoms);
+    }
+  }
+
+  /**
+   * Procedural Fortified Quarantine Outpost (@designer, @artist & @qa)
+   * Yellow/black hazard barrier tape meshes and barricade props along street access points,
+   * concrete sandbag barriers with collision for sniper posts,
+   * pulsing red/yellow holographic ground projection ring (radius: ~16m),
+   * and hovering warning banner ("⚠️ HIGH-RISK QUARANTINE ZONE").
+   */
+  _generateQuarantineZone(qx, qz, propGeoms) {
+    this.isQuarantineZone = true;
+    this.quarantineRadius = 16.0;
+    this.quarantineCenter = { x: qx, z: qz };
+    this.quarantineSandbagPositions = [];
+
+    // 1. Perimeter Hazard Barrier Tapes and Barricade Props at 4 Access Choke Points (radius ~14.8m)
+    const accessOffsets = [
+      { dx: 0, dz: 14.8, rotY: 0 },          // North entrance
+      { dx: 0, dz: -14.8, rotY: 0 },         // South entrance
+      { dx: 14.8, dz: 0, rotY: Math.PI / 2 }, // East entrance
+      { dx: -14.8, dz: 0, rotY: Math.PI / 2 },// West entrance
+    ];
+
+    for (let i = 0; i < accessOffsets.length; i++) {
+      const ao = accessOffsets[i];
+      const bx = qx + ao.dx;
+      const bz = qz + ao.dz;
+
+      // Heavy concrete barrier base (width: 3.8m, height: 1.0m, depth: 0.6m)
+      const barBase = new THREE.BoxGeometry(3.8, 1.0, 0.6);
+      barBase.translate(0, 0.5, 0);
+      if (ao.rotY !== 0) barBase.rotateY(ao.rotY);
+      barBase.translate(bx, 0.25, bz);
+      this._applyVertexColors(barBase, new THREE.Color(0x64748b));
+      this._pushPropGeom(barBase, propGeoms);
+
+      // Yellow & black hazard stripes across the barrier face
+      const stripeWidth = 0.62;
+      for (let s = -2; s <= 2; s++) {
+        const stripeBox = new THREE.BoxGeometry(stripeWidth, 0.95, 0.64);
+        stripeBox.translate(s * (stripeWidth + 0.05), 0.5, 0);
+        if (ao.rotY !== 0) stripeBox.rotateY(ao.rotY);
+        stripeBox.translate(bx, 0.25, bz);
+        const stripeColor = (s % 2 === 0) ? new THREE.Color(0xfacc15) : new THREE.Color(0x18181b);
+        this._applyVertexColors(stripeBox, stripeColor);
+        this._pushPropGeom(stripeBox, propGeoms);
+      }
+
+      // Vertical hazard posts with warning tape anchors on ends
+      for (const pSign of [-1.85, 1.85]) {
+        const pylon = new THREE.CylinderGeometry(0.08, 0.1, 1.3, 8);
+        pylon.translate(pSign, 0.65, 0);
+        if (ao.rotY !== 0) pylon.rotateY(ao.rotY);
+        pylon.translate(bx, 0.25, bz);
+        this._applyVertexColors(pylon, new THREE.Color(0xf59e0b));
+        this._pushPropGeom(pylon, propGeoms);
+      }
+
+      // Register collision box obstacle
+      if (ao.rotY === 0) {
+        this.obstacles.push({
+          minX: bx - 2.0,
+          maxX: bx + 2.0,
+          minZ: bz - 0.45,
+          maxZ: bz + 0.45,
+          isBarricade: true,
+        });
+      } else {
+        this.obstacles.push({
+          minX: bx - 0.45,
+          maxX: bx + 0.45,
+          minZ: bz - 2.0,
+          maxZ: bz + 2.0,
+          isBarricade: true,
+        });
+      }
+    }
+
+    // 2. Concrete Sandbag Defense Posts for 3 Military Riflemen (radius ~7.5m)
+    const sandbagPosts = [
+      { angle: -Math.PI * 0.25, dist: 7.5 }, // North-West post
+      { angle: Math.PI * 0.25, dist: 7.5 },  // North-East post
+      { angle: Math.PI * 0.85, dist: 7.5 },  // South post
+    ];
+
+    for (let i = 0; i < sandbagPosts.length; i++) {
+      const sp = sandbagPosts[i];
+      const sx = qx + Math.sin(sp.angle) * sp.dist;
+      const sz = qz + Math.cos(sp.angle) * sp.dist;
+
+      // Lower row sandbags
+      const row1 = new THREE.BoxGeometry(2.6, 0.42, 0.6);
+      row1.translate(0, 0.21, 0);
+      row1.rotateY(sp.angle);
+      row1.translate(sx, 0.25, sz);
+      this._applyVertexColors(row1, new THREE.Color(0xc2b280));
+      this._pushPropGeom(row1, propGeoms);
+
+      // Upper row sandbags (staggered)
+      const row2 = new THREE.BoxGeometry(2.3, 0.38, 0.52);
+      row2.translate(0, 0.58, 0);
+      row2.rotateY(sp.angle);
+      row2.translate(sx, 0.25, sz);
+      this._applyVertexColors(row2, new THREE.Color(0x9a8e63));
+      this._pushPropGeom(row2, propGeoms);
+
+      // Register obstacle
+      this.obstacles.push({
+        minX: sx - 1.3,
+        maxX: sx + 1.3,
+        minZ: sz - 0.5,
+        maxZ: sz + 0.5,
+        isSandbag: true,
+      });
+
+      this.quarantineSandbagPositions.push({
+        x: sx,
+        z: sz,
+        facingAngle: sp.angle,
+      });
+    }
+
+    // 3. Pulsing Red/Yellow Holographic Ground Projection Ring (radius: ~16m)
+    const ringGeom = new THREE.RingGeometry(15.2, 16.0, 64);
+    ringGeom.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xef4444,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ringMesh = new THREE.Mesh(ringGeom, ringMat);
+    ringMesh.position.set(qx, 0.28, qz);
+    this.quarantineRingMesh = ringMesh;
+    this.meshes.push(ringMesh);
+
+    // 4. Hovering Hazard Warning Banner ("⚠️ HIGH-RISK QUARANTINE ZONE")
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      if (ctx.roundRect) {
+        ctx.roundRect(8, 8, 496, 112, 16);
+      } else {
+        ctx.rect(8, 8, 496, 112);
+      }
+      ctx.fill();
+
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#ef4444';
+      ctx.stroke();
+
+      ctx.font = '900 24px "Outfit", "Inter", sans-serif';
+      ctx.fillStyle = '#fef08a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⚠️ HIGH-RISK QUARANTINE ZONE', 256, 48);
+
+      ctx.font = '700 14px "Outfit", "Inter", sans-serif';
+      ctx.fillStyle = '#f87171';
+      ctx.fillText('LETHAL DEFENSES • OVERRUN FOR REWARDS', 256, 84);
+
+      const bannerTex = new THREE.CanvasTexture(canvas);
+      const bannerMat = new THREE.SpriteMaterial({ map: bannerTex, transparent: true });
+      const bannerSprite = new THREE.Sprite(bannerMat);
+      bannerSprite.scale.set(9.0, 2.25, 1.0);
+      bannerSprite.position.set(qx, 4.8, qz);
+      this.quarantineBannerSprite = bannerSprite;
+      this.meshes.push(bannerSprite);
+    }
+  }
+
+  /**
+   * Updates holographic ring pulse and warning banner bobbing animation.
+   */
+  updateQuarantineVisuals(time, dt) {
+    if (!this.isQuarantineZone) return;
+
+    if (this.quarantineOverrun) {
+      if (this.quarantineRingMesh && this.quarantineRingMesh.material) {
+        this.quarantineRingMesh.material.color.setHex(0x10b981);
+        this.quarantineRingMesh.material.opacity = 0.5 + 0.3 * Math.sin(time * 3.0);
+      }
+      if (this.quarantineBannerSprite && this.quarantineBannerSprite.material) {
+        this.quarantineBannerSprite.position.y = 4.8 + Math.sin(time * 2.0) * 0.1;
+        this._overrunTime = (this._overrunTime || 0) + dt;
+        this.quarantineBannerSprite.material.opacity = Math.max(0.2, 1.0 - this._overrunTime * 0.15);
+      }
+    } else {
+      if (this.quarantineRingMesh && this.quarantineRingMesh.material) {
+        const pulse = 0.5 + 0.5 * Math.sin(time * 4.5);
+        this.quarantineRingMesh.material.color.setRGB(0.95, 0.18 + pulse * 0.45, 0.04);
+        this.quarantineRingMesh.material.opacity = 0.65 + pulse * 0.3;
+      }
+      if (this.quarantineBannerSprite) {
+        this.quarantineBannerSprite.position.y = 4.8 + Math.sin(time * 2.5) * 0.15;
+      }
+    }
   }
 
   _generateMultiShopBlock(wx, wz, sidewalkGeoms, buildingGeoms, kenneyGeoms, propGeoms) {
@@ -1654,6 +1877,21 @@ export class CityChunk {
         mesh.material.dispose();
       }
     }
+    if (this.quarantineRingMesh) {
+      if (scene) scene.remove(this.quarantineRingMesh);
+      if (this.quarantineRingMesh.geometry) this.quarantineRingMesh.geometry.dispose();
+      if (this.quarantineRingMesh.material) this.quarantineRingMesh.material.dispose();
+      this.quarantineRingMesh = null;
+    }
+    if (this.quarantineBannerSprite) {
+      if (scene) scene.remove(this.quarantineBannerSprite);
+      if (this.quarantineBannerSprite.material) {
+        if (this.quarantineBannerSprite.material.map) this.quarantineBannerSprite.material.map.dispose();
+        this.quarantineBannerSprite.material.dispose();
+      }
+      this.quarantineBannerSprite = null;
+    }
+    this.quarantineSandbagPositions.length = 0;
     this.meshes.length = 0;
     this.buildingMeshes.length = 0;
     this.obstacles.length = 0;

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.10.0] - 2026-09-13 — "Faster Hazmat Decontamination & Fortified Quarantine Zones"
+
+### Changed — Hazmat Mist & Last Stand Calibration (@designer & @qa)
+- **Faster Follower Decontamination** (`EntityManager.js`):
+  - Reduced the continuous mist exposure time required to decontaminate/cure a follower zombie by ~30% (from ~0.8s down to `0.55s`).
+  - Followers caught in overlapping Hazmat mist cones are now rapidly stripped away if swarm micro-spacing or flanking maneuvers are neglected.
+- **Last Stand Survival Calibration** (`EntityManager.js`, `main.js`, `index.html`):
+  - When horde follower count hits 0 ("Last Stand"), Patient Zero's maximum decontaminant exposure survival timer is reduced from 5.0s down to `3.5s`.
+  - Calibrated circular SVG countdown ring and countdown label to match the 3.5s window.
+- **Civilian Cure Immunity Preservation** (`EntityManager.js`):
+  - Preserved the full `2.5s` `cureImmunity` window on newly decontaminated civilians, ensuring they have ample time to flee without immediately re-infecting.
+
+### Added — Fortified Quarantine Zones (@designer, @artist & @qa)
+- **Procedural Zone Generation** (`CityChunk.js`, `CityStreamer.js`):
+  - Commercial plaza and park chunks have a ~15% chance to generate as an active "QUARANTINE ZONE" outpost.
+  - Zero-draw-call perimeter barricades with yellow/black diagonal hazard stripes and red/white warning pylons at street access points merged directly into chunk geometry.
+  - 3 concrete sandbag barriers stationed with solid obstacle bounding boxes for military riflemen cover.
+  - Pulsing red/yellow holographic ground projection ring (`THREE.RingGeometry(15.2, 16.0, 64)`) with animated breathing glow shader.
+  - Hovering billboard warning sprite: `"⚠️ HIGH-RISK QUARANTINE ZONE"`.
+- **Heavy Garrison & Lethal Defenses** (`EntityManager.js`):
+  - Stations 4–6 Hazmat Sprayers (5 stationed) positioned along choke points with overlapping mist cones.
+  - Stations 2–3 Military Riflemen (3 stationed) entrenched behind sandbags with telegraph laser sights.
+  - Pushing with under 20 zombies results in lethal horde wipeout; 20+ horde units required to successfully overwhelm through swarm mass.
+  - Garrison units and captives are tagged to prevent distance streaming despawns until the encounter resolves.
+- **Breach & Overrun Rewards** (`EntityManager.js`, `main.js`, `style.css`, `index.html`):
+  - **Victory Condition**: Zone is marked "OVERRUN" once all stationed Hazmats and Military riflemen inside the perimeter are converted or eliminated.
+  - **Score Bonus**: Awards +1,500 points with animated neon amber/red HUD screen banner: `"🚨 QUARANTINE ZONE OVERRUN!"`.
+  - **Guaranteed High-Tier Drop**: Immediately drops a guaranteed "Titan Virus" or "Meat Magnet" canister at the center of the cleared fortress.
+  - **Captive Civilians Liberated**: Frees a barricaded cluster of 8–12 captive civilians (10 civilians) inside the outpost who are immediately vulnerable to infection (`cureImmunity: 0`).
+  - **Audio & Screen Shake**: Orchestrated victory fanfare chime, explosion audio, and floating combat text `🚨 +1,500 OVERRUN!`.
+
+### Added — Automated QA Playtest Suite (@qa)
+- **Quarantine & Decontamination Validation** (`scripts/playtest.js`):
+  - Automated mist exposure timing test confirming followers decontaminate at 0.55s and gain 2.5s cure immunity.
+  - Quarantine Outpost instantiation test asserting garrison composition, holographic ring, warning sprite, and 60 FPS performance compliance.
+  - Overrun mechanics test asserting +1,500 score reward, banner activation, captive civilian liberation, and guaranteed canister drop.
+
+---
+
 ## [2.9.2] - 2026-09-13 — "Spawn Balancing & Titan Demolition Exclusivity"
 
 ### Changed — Zero Initial Follower Guarantee (@designer & @qa)

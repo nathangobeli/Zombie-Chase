@@ -54,10 +54,13 @@ export class EntityManager {
     this.onMilitaryInfected = null;   // (x, z)
     this.onCameraShake = null;        // (intensity, duration)
     this.onStageChanged = null;       // (stage, stageName)
+    this.onQuarantineOverrun = null;  // (zone, rewardType)
 
     // 4-Stage Progressive Difficulty Curve
     this.currentStage = 1;
-    this.cureThreshold = 3.5; // Seconds of continuous spray exposure to cure
+    this.cureThreshold = 3.5;         // Base progressive stage cure window
+    this.followerCureThreshold = 0.55; // Calibrated ~0.55s continuous mist window for follower zombies
+    this.quarantineZones = new Map();  // Active Fortified Quarantine Outposts
 
     // Arcade Power-ups & Threat Tracking
     this.speedSurgeTimer = 0;
@@ -157,6 +160,8 @@ export class EntityManager {
     // 4-Stage Progressive Difficulty: Initial stage is Outbreak Dawn (0:00 - 1:00)
     this.currentStage = 1;
     this.cureThreshold = 3.5;
+    this.followerCureThreshold = 0.55;
+    this.quarantineZones.clear();
 
     // Spawn wandering civilians
     for (let i = 0; i < civilianCount; i++) {
@@ -1215,8 +1220,22 @@ export class EntityManager {
         c.vz = Math.sin(c.wanderAngle) * c.speed;
       }
 
+      // Captive civilians remain huddled inside the fortified quarantine outpost
+      if (c.isCaptive && c.guardCenter) {
+        const gdx = c.x - c.guardCenter.x;
+        const gdz = c.z - c.guardCenter.z;
+        const gDist = Math.hypot(gdx, gdz);
+        if (gDist > 4.5) {
+          c.vx = -(gdx / gDist) * 1.5;
+          c.vz = -(gdz / gDist) * 1.5;
+        } else {
+          c.vx *= 0.25;
+          c.vz *= 0.25;
+        }
+      }
+
       // Meat Magnet vacuum pull towards Patient Zero
-      if (this.meatMagnetTimer > 0) {
+      if (this.meatMagnetTimer > 0 && !c.isCaptive) {
         const pullDx = pz.x - c.x;
         const pullDz = pz.z - c.z;
         const pullDist = Math.hypot(pullDx, pullDz);
@@ -1309,6 +1328,11 @@ export class EntityManager {
     const reachBonus = this.meatMagnetTimer > 0 ? 3.0 : 0.0;
     for (let i = this.civilians.length - 1; i >= 0; i--) {
       const c = this.civilians[i];
+
+      // Captive civilians are protected behind outpost barricades until the zone is overrun
+      if (c.isCaptive) {
+        continue;
+      }
 
       // Newly cured civilians have temporary chemical immunity from re-infection
       if (c.cureImmunity > 0) {
@@ -1499,29 +1523,58 @@ export class EntityManager {
         continue;
       }
 
-      // Aggressive Standoff AI: Path towards swarm center while maintaining 6-unit standoff distance
-      const toTargetX = swarmCenterX - h.x;
-      const toTargetZ = swarmCenterZ - h.z;
-      const toTargetDist = Math.hypot(toTargetX, toTargetZ);
+      // Quarantine Outpost Garrison AI (@designer & @qa):
+      // Stationed at choke points with overlapping spray cones covering perimeter entrances
+      if (h.isQuarantineGarrison && h.guardCenter) {
+        let closestDist = 14.0;
+        let threat = null;
+        const pzDist = Math.hypot(pz.x - h.x, pz.z - h.z);
+        if (pzDist < closestDist) {
+          closestDist = pzDist;
+          threat = pz;
+        }
+        for (let zi = 0; zi < this.zombies.length; zi++) {
+          const z = this.zombies[zi];
+          const zd = Math.hypot(z.x - h.x, z.z - h.z);
+          if (zd < closestDist) {
+            closestDist = zd;
+            threat = z;
+          }
+        }
 
-      if (toTargetDist > 0.05) {
-        h.angle = Math.atan2(toTargetX, toTargetZ);
-        const hazmatSpeed = (this.currentStage === 1 ? 1.6 : this.currentStage === 2 ? 2.0 : this.currentStage === 3 ? 2.4 : 3.0);
-        h.speed = hazmatSpeed;
-        if (toTargetDist > 6.5) {
-          // Advance toward swarm
-          h.vx = (toTargetX / toTargetDist) * h.speed;
-          h.vz = (toTargetZ / toTargetDist) * h.speed;
-        } else if (toTargetDist < 5.2) {
-          // Back up to keep optimal 6-unit spray distance
-          h.vx = -(toTargetX / toTargetDist) * (h.speed * 0.75);
-          h.vz = -(toTargetZ / toTargetDist) * (h.speed * 0.75);
-        } else {
-          // Tactical standoff strafe at ~6m
-          const perpX = -toTargetZ / toTargetDist;
-          const perpZ = toTargetX / toTargetDist;
-          h.vx = perpX * (h.speed * 0.4);
-          h.vz = perpZ * (h.speed * 0.4);
+        if (threat) {
+          h.angle = Math.atan2(threat.x - h.x, threat.z - h.z);
+        } else if (h.stationAngle !== undefined) {
+          h.angle = h.stationAngle;
+        }
+        h.speed = 0;
+        h.vx = 0;
+        h.vz = 0;
+      } else {
+        // Aggressive Standoff AI: Path towards swarm center while maintaining 6-unit standoff distance
+        const toTargetX = swarmCenterX - h.x;
+        const toTargetZ = swarmCenterZ - h.z;
+        const toTargetDist = Math.hypot(toTargetX, toTargetZ);
+
+        if (toTargetDist > 0.05) {
+          h.angle = Math.atan2(toTargetX, toTargetZ);
+          const hazmatSpeed = (this.currentStage === 1 ? 1.6 : this.currentStage === 2 ? 2.0 : this.currentStage === 3 ? 2.4 : 3.0);
+          h.speed = hazmatSpeed;
+          if (toTargetDist > 6.5) {
+            // Advance toward swarm
+            h.vx = (toTargetX / toTargetDist) * h.speed;
+            h.vz = (toTargetZ / toTargetDist) * h.speed;
+          } else if (toTargetDist < 5.2) {
+            // Back up to keep optimal 6-unit spray distance
+            h.vx = -(toTargetX / toTargetDist) * (h.speed * 0.75);
+            h.vz = -(toTargetZ / toTargetDist) * (h.speed * 0.75);
+          } else {
+            // Tactical standoff strafe at ~6m
+            const perpX = -toTargetZ / toTargetDist;
+            const perpZ = toTargetX / toTargetDist;
+            h.vx = perpX * (h.speed * 0.4);
+            h.vz = perpZ * (h.speed * 0.4);
+          }
         }
       }
 
@@ -1540,7 +1593,7 @@ export class EntityManager {
       // Spray Cone Collision Check: 12 units range, 45 degrees angle along facing vector
       const sprayDirX = Math.sin(h.angle);
       const sprayDirZ = Math.cos(h.angle);
-      const activeCureThreshold = this.cureThreshold || 0.8;
+      const activeCureThreshold = this.followerCureThreshold || 0.55;
 
       spatialGrid.forEachInCone(
         h.x,
@@ -1553,7 +1606,7 @@ export class EntityManager {
           if (entity.type === 'player' && this.isSprayInvulnerable) return false;
 
           if (entity.type === 'zombie') {
-            // Sustained exposure inside spray cone cures zombie back to civilian!
+            // Sustained exposure inside spray cone cures zombie back to civilian (~0.55s continuous exposure)!
             entity.sprayExposure = (entity.sprayExposure || 0) + dt;
             if (this.onHazmatDamageDealt) {
               this.onHazmatDamageDealt(dt);
@@ -1616,37 +1669,41 @@ export class EntityManager {
         if (this.onHazmatDestroyed) {
           this.onHazmatDestroyed(h.x, h.z);
         }
+        const wasGarrison = h.isQuarantineGarrison;
         this.hazmats.splice(hIdx, 1);
-        setTimeout(() => {
-          if (this.hazmats.length < 2 && this.zombies.length >= 15) {
-            this.spawnHazmat();
-          }
-        }, 12000);
+        if (!wasGarrison) {
+          setTimeout(() => {
+            if (this.hazmats.length < 2 && this.zombies.length >= 15) {
+              this.spawnHazmat();
+            }
+          }, 12000);
+        }
       }
     }
 
     // Patient Zero Spray Threat (@designer & @qa):
     // 1. Maintain absolute invulnerability for Patient Zero while hordeCount > 0 (followers deplete first)
-    // 2. When hordeCount === 0: trigger 5.0s sustained Last Stand exposure before GAME OVER
+    // 2. When hordeCount === 0: trigger calibrated 3.5s sustained Last Stand exposure before GAME OVER
+    const maxLastStandTime = 3.5;
     if (this.zombies.length > 0) {
       pz.isSpraySlowed = false;
       this.pzSprayTime = 0;
       if (this.onPatientZeroSprayed) {
-        this.onPatientZeroSprayed(dt, 0.0, 5.0);
+        this.onPatientZeroSprayed(dt, 0.0, maxLastStandTime);
       }
     } else {
       if (pzHitBySprayThisFrame && !this.isSprayInvulnerable) {
         pz.isSpraySlowed = true;
-        this.pzSprayTime = Math.min(5.0, (this.pzSprayTime || 0) + dt);
+        this.pzSprayTime = Math.min(maxLastStandTime, (this.pzSprayTime || 0) + dt);
         if (this.onHazmatDamageDealt) {
           this.onHazmatDamageDealt(dt);
         }
-        const progress = Math.min(1.0, this.pzSprayTime / 5.0);
-        const timeLeft = Math.max(0, 5.0 - this.pzSprayTime);
+        const progress = Math.min(1.0, this.pzSprayTime / maxLastStandTime);
+        const timeLeft = Math.max(0, maxLastStandTime - this.pzSprayTime);
         if (this.onPatientZeroSprayed) {
           this.onPatientZeroSprayed(dt, progress, timeLeft);
         }
-        if (this.pzSprayTime >= 5.0) {
+        if (this.pzSprayTime >= maxLastStandTime) {
           if (this.onGameOver) {
             this.onGameOver('QUARANTINED!');
           }
@@ -1654,8 +1711,8 @@ export class EntityManager {
       } else {
         pz.isSpraySlowed = false;
         this.pzSprayTime = Math.max(0, (this.pzSprayTime || 0) - dt * 1.0);
-        const progress = Math.min(1.0, this.pzSprayTime / 5.0);
-        const timeLeft = Math.max(0, 5.0 - this.pzSprayTime);
+        const progress = Math.min(1.0, this.pzSprayTime / maxLastStandTime);
+        const timeLeft = Math.max(0, maxLastStandTime - this.pzSprayTime);
         if (this.onPatientZeroSprayed) {
           this.onPatientZeroSprayed(dt, progress, timeLeft);
         }
@@ -1871,6 +1928,16 @@ export class EntityManager {
             }
           }
         }
+      } else if (m.isQuarantineGarrison && m.sandbagCoverPos) {
+        m.state = 'patrol';
+        m.targetPos = null;
+        m.aimTimer = 0;
+        m.speed = 0;
+        m.vx = 0;
+        m.vz = 0;
+        m.x = m.sandbagCoverPos.x;
+        m.z = m.sandbagCoverPos.z;
+        m.angle = m.patrolAngle;
       } else {
         // Patrol streets or choke points
         m.state = 'patrol';
@@ -2035,7 +2102,10 @@ export class EntityManager {
       }
     }
 
-    // 13. Population Streaming & Memory Cleanup
+    // 13. Quarantine Zones Overrun Evaluation (@designer, @artist & @qa)
+    this._updateQuarantineZones(dt);
+
+    // 14. Population Streaming & Memory Cleanup
     this.updatePopulationStreaming(pz);
   }
 
@@ -2090,6 +2160,7 @@ export class EntityManager {
     // 1. Despawn distant non-horde entities (> 140m away from Patient Zero)
     for (let i = this.civilians.length - 1; i >= 0; i--) {
       const c = this.civilians[i];
+      if (c.isCaptive) continue;
       const distSq = (c.x - pzRef.x) ** 2 + (c.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.civilians.splice(i, 1);
@@ -2106,6 +2177,7 @@ export class EntityManager {
 
     for (let i = this.hazmats.length - 1; i >= 0; i--) {
       const h = this.hazmats[i];
+      if (h.isQuarantineGarrison) continue;
       const distSq = (h.x - pzRef.x) ** 2 + (h.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.hazmats.splice(i, 1);
@@ -2114,6 +2186,7 @@ export class EntityManager {
 
     for (let i = this.militaryUnits.length - 1; i >= 0; i--) {
       const m = this.militaryUnits[i];
+      if (m.isQuarantineGarrison) continue;
       const distSq = (m.x - pzRef.x) ** 2 + (m.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.militaryUnits.splice(i, 1);
@@ -2433,6 +2506,263 @@ export class EntityManager {
       const w = this.wardens[wi];
       if (Math.hypot(w.x - x, w.z - z) <= stompRadius) {
         this.convertWardenToZombie(wi);
+      }
+    }
+  }
+
+  /**
+   * Registers a newly generated Fortified Quarantine Outpost chunk.
+   * Stations 4–6 Hazmat Sprayers with overlapping mist cones covering key choke points,
+   * 2–3 Military Riflemen behind concrete sandbag barriers with telegraph laser sights,
+   * and a trapped cluster of 8–12 captive civilians huddled inside the perimeter.
+   */
+  registerQuarantineZone(chunk) {
+    if (!chunk || !chunk.isQuarantineZone) return null;
+    if (this.quarantineZones.has(chunk.key)) return this.quarantineZones.get(chunk.key);
+
+    const qx = chunk.quarantineCenter.x;
+    const qz = chunk.quarantineCenter.z;
+    const zone = {
+      chunkKey: chunk.key,
+      chunk: chunk,
+      center: { x: qx, z: qz },
+      radius: chunk.quarantineRadius || 16.0,
+      isOverrun: false,
+      garrisonHazmatIds: [],
+      garrisonMilitaryIds: [],
+      captiveCivilianIds: [],
+    };
+
+    // 1. Station 4–6 Hazmat Sprayers (5 stationed) covering perimeter access choke points
+    const hazmatStations = [
+      { x: qx, z: qz + 13.5, angle: 0 },                   // North choke point
+      { x: qx, z: qz - 13.5, angle: Math.PI },             // South choke point
+      { x: qx + 13.5, z: qz, angle: Math.PI / 2 },         // East choke point
+      { x: qx - 13.5, z: qz, angle: -Math.PI / 2 },        // West choke point
+      { x: qx + 1.5, z: qz + 1.5, angle: Math.PI * 0.25 }, // Center interior patrol
+    ];
+
+    for (let i = 0; i < hazmatStations.length; i++) {
+      const pos = hazmatStations[i];
+      const h = this.spawnHazmat(pos.x, pos.z, false);
+      h.isQuarantineGarrison = true;
+      h.quarantineZoneKey = chunk.key;
+      h.guardCenter = { x: qx, z: qz };
+      h.guardRadius = 15.5;
+      h.stationAngle = pos.angle;
+      h.angle = pos.angle;
+      zone.garrisonHazmatIds.push(h.id);
+    }
+
+    // 2. Station 2–3 Military Riflemen (3 stationed) behind concrete sandbag barriers
+    const sandbagPosts = (chunk.quarantineSandbagPositions && chunk.quarantineSandbagPositions.length > 0)
+      ? chunk.quarantineSandbagPositions
+      : [
+          { x: qx - 5.5, z: qz + 5.5, facingAngle: -Math.PI * 0.25 },
+          { x: qx + 5.5, z: qz + 5.5, facingAngle: Math.PI * 0.25 },
+          { x: qx, z: qz - 7.5, facingAngle: Math.PI * 0.85 },
+        ];
+
+    for (let i = 0; i < sandbagPosts.length; i++) {
+      const sp = sandbagPosts[i];
+      const soldier = {
+        id: this._nextId++,
+        type: 'military',
+        x: sp.x,
+        z: sp.z,
+        vx: 0,
+        vz: 0,
+        radius: 0.65,
+        speed: 2.1,
+        angle: sp.facingAngle,
+        walkPhase: Math.random() * 10,
+        state: 'patrol',
+        patrolTimer: 3.0,
+        patrolAngle: sp.facingAngle,
+        targetPos: null,
+        targetEntity: null,
+        aimTimer: 0,
+        aimThreshold: 1.4,
+        cooldownTimer: 0,
+        tracerShot: null,
+        isQuarantineGarrison: true,
+        quarantineZoneKey: chunk.key,
+        sandbagCoverPos: { x: sp.x, z: sp.z },
+        guardCenter: { x: qx, z: qz },
+        guardRadius: 15.5,
+      };
+      this.militaryUnits.push(soldier);
+      zone.garrisonMilitaryIds.push(soldier.id);
+    }
+
+    // 3. Trapped cluster of 8–12 captive civilians (10 civilians) huddled inside outpost
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const r = 1.0 + Math.random() * 3.5;
+      const civ = {
+        id: this._nextId++,
+        type: 'civilian',
+        x: qx + Math.cos(ang) * r,
+        z: qz + Math.sin(ang) * r,
+        vx: 0,
+        vz: 0,
+        radius: 0.5,
+        speed: 0.8,
+        fleeSpeed: 3.6,
+        wanderAngle: Math.random() * Math.PI * 2,
+        fleeTimer: 0,
+        walkPhase: 0,
+        colorVariation: Math.floor(Math.random() * 4),
+        cureFlail: 0,
+        cureImmunity: 0,
+        isCaptive: true,
+        quarantineZoneKey: chunk.key,
+        guardCenter: { x: qx, z: qz },
+      };
+      this.civilians.push(civ);
+      zone.captiveCivilianIds.push(civ.id);
+    }
+
+    this.quarantineZones.set(chunk.key, zone);
+    return zone;
+  }
+
+  /**
+   * Unregisters a quarantine outpost when its chunk is unloaded.
+   */
+  unregisterQuarantineZone(chunkKey) {
+    if (!this.quarantineZones.has(chunkKey)) return;
+    const zone = this.quarantineZones.get(chunkKey);
+    // If not overrun, purge lingering captive civilians
+    if (!zone.isOverrun) {
+      for (let i = this.civilians.length - 1; i >= 0; i--) {
+        if (this.civilians[i].quarantineZoneKey === chunkKey) {
+          this.civilians.splice(i, 1);
+        }
+      }
+    }
+    this.quarantineZones.delete(chunkKey);
+  }
+
+  /**
+   * Spawns a synthetic Quarantine Outpost at specific coordinates (for testing and manual triggering).
+   */
+  spawnQuarantineOutpost(x, z) {
+    const ringGeom = new THREE.RingGeometry(15.2, 16.0, 64);
+    ringGeom.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xef4444,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ringMesh = new THREE.Mesh(ringGeom, ringMat);
+    ringMesh.position.set(x, 0.28, z);
+    if (this.scene) this.scene.add(ringMesh);
+
+    let bannerSprite = null;
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      if (ctx.roundRect) ctx.roundRect(8, 8, 496, 112, 16); else ctx.rect(8, 8, 496, 112);
+      ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#ef4444';
+      ctx.stroke();
+      ctx.font = '900 24px sans-serif';
+      ctx.fillStyle = '#fef08a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⚠️ HIGH-RISK QUARANTINE ZONE', 256, 48);
+
+      const bannerTex = new THREE.CanvasTexture(canvas);
+      const bannerMat = new THREE.SpriteMaterial({ map: bannerTex, transparent: true });
+      bannerSprite = new THREE.Sprite(bannerMat);
+      bannerSprite.scale.set(9.0, 2.25, 1.0);
+      bannerSprite.position.set(x, 4.8, z);
+      if (this.scene) this.scene.add(bannerSprite);
+    }
+
+    const mockChunk = {
+      key: `custom_${Math.round(x)},${Math.round(z)}`,
+      isQuarantineZone: true,
+      quarantineRadius: 16.0,
+      quarantineCenter: { x, z },
+      quarantineRingMesh: ringMesh,
+      quarantineBannerSprite: bannerSprite,
+      quarantineSandbagPositions: [
+        { x: x - 5.5, z: z + 5.5, facingAngle: -Math.PI * 0.25 },
+        { x: x + 5.5, z: z + 5.5, facingAngle: Math.PI * 0.25 },
+        { x: x, z: z - 7.5, facingAngle: Math.PI * 0.85 },
+      ],
+      quarantineOverrun: false,
+      meshes: [ringMesh, bannerSprite].filter(Boolean),
+    };
+    return this.registerQuarantineZone(mockChunk);
+  }
+
+  /**
+   * Evaluates active quarantine zones for Overrun victory conditions:
+   * When all stationed Hazmats and Military units are converted or eliminated:
+   * 1. Award +1,500 score bonus.
+   * 2. Free captive civilians (immediately vulnerable to infection).
+   * 3. Spawn guaranteed high-tier drop ("Titan Virus" or "Meat Magnet").
+   * 4. Trigger onQuarantineOverrun callback with animated banner.
+   */
+  _updateQuarantineZones(dt) {
+    if (!this.quarantineZones || this.quarantineZones.size === 0) return;
+
+    for (const [key, zone] of this.quarantineZones) {
+      if (zone.isOverrun) continue;
+
+      let livingHazmats = 0;
+      for (let hi = 0; hi < this.hazmats.length; hi++) {
+        if (this.hazmats[hi].quarantineZoneKey === key) {
+          livingHazmats++;
+        }
+      }
+
+      let livingMilitary = 0;
+      for (let mi = 0; mi < this.militaryUnits.length; mi++) {
+        if (this.militaryUnits[mi].quarantineZoneKey === key) {
+          livingMilitary++;
+        }
+      }
+
+      if (livingHazmats === 0 && livingMilitary === 0) {
+        zone.isOverrun = true;
+        if (zone.chunk) {
+          zone.chunk.quarantineOverrun = true;
+          zone.chunk._overrunTime = 0;
+        }
+
+        // 1. Massive Score Bonus: +1,500 points
+        this.score += 1500;
+
+        // 2. Free trapped captive civilians
+        let freedCount = 0;
+        for (let ci = 0; ci < this.civilians.length; ci++) {
+          const c = this.civilians[ci];
+          if (c.quarantineZoneKey === key && c.isCaptive) {
+            c.isCaptive = false;
+            c.fleeTimer = 5.0;
+            c.fleeSpeed = 4.2;
+            c.cureImmunity = 0; // Immediately vulnerable to infection!
+            freedCount++;
+          }
+        }
+
+        // 3. Guaranteed High-Tier Drop: "Titan Virus" or "Meat Magnet"
+        const rewardType = Math.random() < 0.5 ? 'titan_virus' : 'meat_magnet';
+
+        // 4. Fire event callback
+        if (this.onQuarantineOverrun) {
+          this.onQuarantineOverrun(zone, rewardType, freedCount);
+        }
       }
     }
   }
