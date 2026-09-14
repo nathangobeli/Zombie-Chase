@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.1] - 2026-09-13 — "GitHub Pages CI/CD & Project Documentation Overhaul"
+
+### Added — Repository CI/CD & Documentation
+- **Automated GitHub Pages Deployment** (`.github/workflows/deploy.yml`):
+  - Added official GitHub Actions workflow that builds the Vite project on `push` to `main`/`master` and deploys directly to GitHub Pages.
+- **Relative Base Asset Resolution** (`vite.config.js`):
+  - Configured `base: './'` for zero-config subpath asset loading across GitHub Pages and custom domains.
+- **Comprehensive Project README** (`README.md`):
+  - Overhauled repository documentation highlighting v2.9.0 Titan demolition, illuminated city atmosphere, mobile virtual joystick, retro arcade leaderboard, and PWA assets.
+- **Package Version Alignment** (`package.json`):
+  - Bumped project package version to `2.9.0` (matching semantic game engine release).
+
+---
+
 ## [2.9.0] - 2026-09-13 — "Titan Destruction Mechanics: Car Demolition & Prop Smashing"
 
 ### Added — Titan Car Explosive Demolition (@designer & @artist)

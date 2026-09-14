@@ -1,6 +1,11 @@
-# 🧟 Zombie Chase — Infinite 3D Swarm Arcade
+# 🧟 Zombie Chase — Infinite 3D Swarm Arcade (v2.9.0)
 
-An isometric 3D arcade survival and swarm-simulation game built with **Three.js** and **Vite**. Take control of **Patient Zero**, rampage through an infinitely expanding procedural city, infect fleeing citizens, recruit roaming stray zombies, and command a massive, unstoppable horde while outmaneuvering tactical Hazmat quarantine squads.
+[![Version](https://img.shields.io/badge/version-2.9.0-brightgreen.svg)](CHANGELOG.md)
+[![Three.js](https://img.shields.io/badge/Three.js-r186-black.svg)](https://threejs.org/)
+[![Vite](https://img.shields.io/badge/Vite-v8.3.0-646CFF.svg)](https://vitejs.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+An isometric 3D arcade survival and swarm-simulation game built with **Three.js** and **Vite**. Take control of **Patient Zero**, rampage through an infinitely expanding procedural city, infect fleeing citizens, recruit roaming stray zombies, smash through parked and moving cars as a colossal **Titan Infected**, and command a massive, unstoppable horde while outmaneuvering tactical Hazmat quarantine squads and military blockades.
 
 ---
 
@@ -10,48 +15,34 @@ In **Zombie Chase**, you lead the viral apocalypse from the ground up:
 - **Patient Zero**: You are the swarm vanguard. Your movement directs the flocking behavior of the entire horde.
 - **Infection Mechanics**: Run down uninfected civilians to immediately turn them into loyal swarm members.
 - **Stray Recruitment**: Discover and touch roaming wild zombies scattered across city alleys to recruit them into your active pack.
+- **Titan Infected & Demolition**: Evolve into or trigger Titan Infected mode to smash clean through parked and moving traffic with multi-piece explosive debris physics and demolish street lamps, bushes, and benches!
 - **City Panic Escalation**: As your horde grows and time elapses, city-wide panic rises from 0% to 100%. Citizens transition from relaxed strolls to desperate high-speed sprints.
-- **Quarantine Threat**: Specialized Hazmat response units mobilize to decontaminate and cure your zombies with pressurized disinfectant spray. Overwhelm them with sheer swarm numbers!
+- **Quarantine & Military Threat**: Specialized Hazmat response units and armored military blockades mobilize to decontaminate and neutralize your zombies with pressurized disinfectant spray. Overwhelm them with sheer swarm numbers!
 - **Avatar Transfer**: If your current leader is cornered, instantly transfer consciousness to any living member of your pack.
+- **Retro Arcade Leaderboard**: Enter your 3-character initials upon game over and immortalize your highest swarm record on the local arcade leaderboard.
 
 ---
 
-## ✨ Key Features
+## ✨ Latest Features (v2.9.0)
 
-### 1. 🏙️ Infinite Procedural City Generation
-- **Seamless 64m Modular Chunks**: The urban world generates infinitely in all directions as you run, with uninterrupted two-lane avenues (12m width) and pedestrian sidewalks.
-- **Deterministic 2D Seeding**: Uses coordinate hashing (`hash2D(cx, cz)`) so returning to previously visited locations recreates identical city blocks, buildings, and parks.
-- **Diverse Block Archetypes**:
-  - **Commercial High-Rise**: Dual commercial buildings with service alleys and dumpsters.
-  - **Skyscraper Plaza**: Modern corporate towers with decorative paved plazas and benches.
-  - **Public City Parks**: Lush grass lawns (`#2e7d32`), stone paths, shade trees, and zero building obstacles for fast swarm sprints.
-  - **Multi-Shop Retail**: Quadrant retail blocks with varied building heights and alleyways.
+### 💥 Titan Car Explosive Demolition & Prop Smashing
+- **Vehicle Demolition Physics**: Rampage through parked and moving street traffic as a Titan Infected. Smashed vehicles detonate with directional blast shockwaves, smoke plumes, fireballs, and multi-part tumbling debris:
+  - 4 spinning rubber tires bouncing with restitution
+  - Front and rear bumpers
+  - Painted sheet-metal body panels
+  - Heavy cast-iron engine blocks
+- **Zero-Draw-Call Prop Smashing**: Demolish street lamps, park bushes, wooden benches, and fire hydrants. Props instantly collapse their mesh geometry without adding any additional GPU draw calls, emitting custom particle bursts (sparks, wood splinters, foliage leaves, and water geysers).
 
-### 2. ⚡ Memory-Optimized Chunk Streaming ($O(1)$ RAM / VRAM)
-- **Active 5×5 Chunk Window**: Keeps only 25 chunks (320m × 320m) in active memory around the player (`renderDistance = 2`).
-- **Complete WebGL Buffer Disposal**:
-  - Chunks crossing the unload boundary (`unloadDistance = 3`) are immediately stripped of meshes and their geometries are freed from GPU memory via `geometry.dispose()`.
-  - Collision AABBs are purged from the spatial grid.
-  - Object references are dropped for immediate garbage collection, guaranteeing constant, bounded memory usage regardless of how far you travel.
+### 💡 Night City Illumination & Dynamic Atmosphere
+- **Glow-Casting Street Lamps**: Overhead street fixtures cast warm, atmospheric light onto avenues and sidewalks.
+- **Functional Traffic Stoplights**: Realistic 3-color stoplights illuminate intersections with vivid ambient signals.
+- **Lit Architectural Windows**: High-rise residential and commercial towers illuminate with warm interior lights across nighttime city blocks.
 
-### 3. 👥 Dynamic Population Streaming & Swarm Retention
-- **Living Infinite City**: Non-horde entities (civilians, stray zombies, hazmats) are dynamically spawned on streets ahead of the player and despawned once beyond 140m, maintaining a consistent density of ~50 civilians and ~16 strays.
-- **Horde Lag Retention**: If horde members lag behind (>165m) while navigating around corners, they are smoothly repositioned to the rear of your pack so you never lose your hard-earned swarm.
-
-### 4. 🎨 High-Contrast Visual Aesthetics & Dynamic Lighting
-- **Asphalt Grey Roads**: Roads are styled in clean asphalt grey (`#3e4550`) with bright double yellow centerlines and white pedestrian crosswalks.
-- **Elevated Concrete Sidewalks**: Bright concrete sidewalks (`#b4bcc6`) with elevated curbs (`Y = 0.22`) provide sharp contrast against streets and buildings.
-- **Vibrant Architectural Palettes**: Buildings feature curated modern palettes (terracotta brick, cobalt corporate blue, warm amber, emerald green, platinum white, sandstone cream, royal plum, and glass cyan).
-- **Daylight Atmosphere & Tracking Sun**: Crisp arcade sky (`#9ec0e2`), soft linear distance fog, bright ambient hemisphere bounce light, and dynamic directional sunlight that follows Patient Zero.
-
-### 5. 🏃 Biomechanical Locomotion & Menacing Postures
-- **Realistic Strides**: Synchronized leg stride cadences (2.8 rad/m for humans, 2.4 rad/m for zombies) with natural arm swing and subtle idle breathing.
-- **Terrifying Zombie Form**: Zombies feature forward-outstretched clutching arms, hunched backs, and an asymmetrical lumbering shamble.
-- **Healthy Civilian Appearance**: High-resolution face and clothing textures with clean peach skin, bright eyes, and styled apparel.
-
-### 6. 🚀 GPU-Accelerated Instanced Rendering
-- **High Entity Capacity**: Custom vertex animation shader injected into `THREE.MeshStandardMaterial` allows rendering 1200+ animated characters at 60 FPS in a single draw call.
-- **Spatial Hash Grid**: Zero-allocation 2D spatial hash grid (`SpatialGrid.js`) handles $O(1)$ proximity queries and smooth wall-sliding collision resolution.
+### 📱 Mobile Optimization & Responsive Viewport
+- **Pinch-Zoom Lock**: Native iOS/Android pinch-to-zoom and double-tap gestures locked with `touch-action: none;` and viewport meta controls.
+- **Virtual Arcade Touch Joystick**: Smooth, high-precision floating thumbstick with haptic-styled retro responsiveness.
+- **Widened Camera Framing**: 25% wider situational isometric camera framing tailored for all mobile screens and aspect ratios.
+- **PWA Biohazard App**: Installable progressive web app with high-res biohazard icons (`192x192`, `512x512`, and Apple Touch Icon).
 
 ---
 
@@ -62,6 +53,7 @@ In **Zombie Chase**, you lead the viral apocalypse from the ground up:
 | **Move / Steer** | `W` `A` `S` `D` / Arrow Keys / Click & Drag | Virtual Touch Joystick (drag anywhere) |
 | **Frenzy Dash** | `Spacebar` / `Frenzy` Button | Tap `⚡ FRENZY` button (bottom right) |
 | **Avatar Transfer** | Double tap directional keys toward a swarm member | Swipe in direction of target swarm member |
+| **Titan Demolition** | Collide with cars and street props as Titan Infected | Collide with cars and street props as Titan Infected |
 | **Reset Game** | Click `RESET` on top-left toolbar | Tap `RESET` on toolbar |
 
 ---
@@ -70,19 +62,28 @@ In **Zombie Chase**, you lead the viral apocalypse from the ground up:
 
 ```
 Zombie Chase/
-├── index.html                   # Game UI, HUD telemetry overlay & canvas entry
+├── index.html                   # Game UI, HUD telemetry overlay, arcade modals & canvas entry
 ├── package.json                 # Project scripts & dependencies (Three.js, Vite)
-├── vite.config.js               # Vite development & build configuration
+├── vite.config.js               # Vite development, base relative path & build configuration
 ├── CHANGELOG.md                 # Detailed chronological version changelog
 ├── README.md                    # Project documentation
+├── .github/
+│   └── workflows/
+│       └── deploy.yml           # Automated GitHub Pages CI/CD deployment
 ├── public/
+│   ├── manifest.json            # PWA Web App Manifest
+│   ├── icon-192.png             # Biohazard home screen icon (192x192)
+│   ├── icon-512.png             # Biohazard splash icon (512x512)
+│   ├── apple-touch-icon.png     # iOS bookmark icon
 │   └── assets/
 │       ├── buildings/           # Kenney 3D commercial GLB models & colormap
 │       └── characters/          # 3D character models, skins, and animations
 └── src/
-    ├── main.js                  # Application orchestrator, game loop & scene setup
+    ├── main.js                  # Application orchestrator, game loop, debris physics & scene setup
     ├── ai/
-    │   └── Boids.js             # Reynolds flocking algorithms (separation, alignment, cohesion)
+    │   └── Boids.js             # Reynolds flocking algorithms with dynamic spacing
+    ├── audio/
+    │   └── AudioSystem.js       # Synthesized Web Audio sound effects & ambient tracks
     ├── camera/
     │   └── CameraController.js  # Dynamic isometric follow camera with horde-scaling zoom
     ├── controls/
@@ -90,18 +91,22 @@ Zombie Chase/
     ├── core/
     │   └── SpatialGrid.js       # 2D spatial hash grid for fast proximity & AABB sliding
     ├── entities/
-    │   └── EntityManager.js     # State management, infection rules, panic escalation & streaming
+    │   ├── EntityManager.js     # State management, infection rules, panic escalation & streaming
+    │   └── PowerupManager.js    # In-game powerups and mutating viral strains
     ├── fx/
-    │   └── Particles.js         # Instanced GPU particle system for infection & spray mist
+    │   └── Particles.js         # Instanced GPU particle system (explosions, mist, sparks, water)
     ├── rendering/
     │   ├── CharacterGeometry.js # Low-poly humanoid geometry & vertex shader animation injection
     │   └── InstancedRenderer.js # Batch instanced mesh renderer supporting 1200+ characters
+    ├── systems/
+    │   └── StorageSystem.js     # LocalStorage high-score and arcade leaderboard persistence
     └── world/
         ├── AssetLoader.js       # Asynchronous FBX, glTF, and texture asset loader
-        ├── CityChunk.js         # 64m modular urban chunk with roads, sidewalks, buildings & props
-        ├── CityGenerator.js     # Legacy static city generator (fallback)
+        ├── CityChunk.js         # 64m modular urban chunk with static vertex collapsing
+        ├── CityGenerator.js     # Static city generator fallback
         ├── CityStreamer.js      # Infinite procedural chunk streamer & memory manager
-        └── PropManager.js       # Street furniture and prop instancing manager
+        ├── PropManager.js       # Street furniture and prop instancing manager
+        └── TrafficManager.js    # Procedural street traffic with vehicle demolition support
 ```
 
 ---
@@ -111,8 +116,9 @@ Zombie Chase/
 - **Core Engine**: [Three.js](https://threejs.org/) (WebGL 3D Rendering)
 - **Bundler & Dev Server**: [Vite](https://vitejs.dev/)
 - **Language**: Modern JavaScript (ES2022+ Modules)
+- **Audio**: Web Audio API (zero-latency procedural sound design)
 - **Styling**: Vanilla CSS3 (Glassmorphism HUD, responsive layout)
-- **3D Assets**: Kenney Commercial Buildings & Character Models
+- **3D Assets**: Kenney Commercial Buildings & Character Models ([CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/))
 
 ---
 
@@ -137,7 +143,7 @@ Launch the local development server with hot-module reloading:
 ```bash
 npm run dev
 ```
-Open your browser and navigate to the local URL (typically `http://localhost:5173/` or `http://localhost:5174/`).
+Open your browser and navigate to `http://localhost:5173/`.
 
 ### Production Build
 Compile and bundle the game for production deployment:
@@ -148,17 +154,6 @@ Preview the production build locally:
 ```bash
 npm run preview
 ```
-
----
-
-## 📊 HUD & Telemetry Metrics
-
-- **HORDE**: Total active swarm members currently under your command.
-- **CIVILIANS**: Count of living citizens remaining within active proximity.
-- **STRAYS**: Number of unaligned wild zombies roaming the nearby streets ready for recruitment.
-- **PANIC**: City-wide alert level (0% to 100%), dynamically driving civilian sprint speeds.
-- **FPS**: Real-time rendering frame rate.
-- **DRAWS**: Number of GPU draw calls executed per frame.
 
 ---
 
