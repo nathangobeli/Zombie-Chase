@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.0] - 2026-09-14 — "Systems & Gameplay Expansion: Roguelite Mutations, Advanced Enemies & Hazard Systems"
+
+### Added — Dynamic Panic Pacing & Panic-Linked Escalations (@designer & @qa)
+- **50% Slower Passive Panic Rate** (`EntityManager.js`):
+  - Slowed down baseline panic accumulation by 50% (scaling over 180s instead of 90s) for longer, more strategic gameplay sessions.
+- **Panic Reduction Mechanics** (`EntityManager.js`, `PowerupManager.js`):
+  - Overrunning a Fortified Quarantine Zone decreases City Panic by 20% (`-0.20`).
+  - New Power-Up: **📡 MEDIA BLACKOUT** (`media_blackout`) decreases City Panic by 15% (`-0.15`) and pauses passive panic accumulation for 10 seconds.
+- **Escalating Threat Levels** (`EntityManager.js`, `TrafficManager.js`):
+  - **30%–60% Panic**: Riot/Emergency Vehicles deployed with armored SWAT navy hull, flashing lightbars, and continuous 360-degree fast-cure mist (0.4s cure rate).
+  - **60%–85% Panic**: Attack Helicopters spawn at Y=18m, smoothly tracking Patient Zero and casting an 8m tracking spotlight. Lingering in the beam for >2.0s triggers a high-explosive gas bomb / airstrike.
+  - **85%–100% Panic**: Armored Battle Tanks deploy at street intersections with heavy treads, rotatable turrets, and explosive shells that scatter hordes. Destructible only via Titan mode ramming or 40+ Zombie Phalanx overwhelm.
+
+### Added — Roguelite Mutation Rewards (@designer, @artist & @qa)
+- **Mutation Selection Modal** (`index.html`, `style.css`, `main.js`, `EntityManager.js`):
+  - Overrunning a Quarantine Outpost pauses the simulation loop and presents a stylized cyberpunk "MUTATION UNLOCKED" interface offering 3 permanent passive upgrades:
+    1. **🧪 Acidic Blood**: Slain follower zombies leave an acidic puddle (radius 2.5m) that stuns and dissolves Hazmat and Military units for 3 seconds.
+    2. **🦴 Brute Bone**: Follower zombies gain +40% resistance against chemical decontaminant mist (cure threshold raised from 0.55s to 0.77s).
+    3. **☣️ Hyper-Infectious**: Patient Zero and horde infection hitboxes expand by +25% reach across civilians and stray zombies.
+
+### Added — Swarm Phalanx Formation & Gamepad API (@designer & @qa)
+- **Phalanx / Shield Wall Formation** (`Boids.js`, `InputController.js`, `EntityManager.js`, `index.html`, `style.css`):
+  - Inverts boid forces to compress followers into a dense, tight protective meat-shield ring (radius ~2.2m) circling Patient Zero.
+  - Meat-shields Patient Zero from rapid decontaminant mist and absorbs direct tank explosive shells.
+  - Mapped to keyboard `KeyX` / `KeyF`, mobile touch button `#btn-phalanx`, and gamepad Left Trigger (LT / L2).
+- **HTML5 Gamepad API Support** (`InputController.js`):
+  - Left Analog Stick for fluid 360-degree analog steering with deadzone calibration.
+  - South Face Button (A / Cross) triggers Frenzy Sprint.
+  - Right Trigger (RT / R2) activates Swarm Squeeze.
+  - Left Trigger (LT / L2) activates Phalanx / Shield Wall formation.
+
+### Added — Systemic Environmental Hazards & Storefront Interior Funnels (@designer & @artist)
+- **Systemic Water & Acid Puddles** (`EntityManager.js`, `main.js`):
+  - Smashed fire hydrants release high-pressure water geysers and leave ground puddles (radius 3.5m).
+  - Smashed street lamps and stoplights near puddles electrify them for 8 seconds, stunning Hazmat and Military units for 3 seconds.
+  - **Poisoned Water Supply**: Smashing or touching hydrants in Titan mode turns the water puddle toxic green, instantly converting healthy civilians who step through it.
+- **Breakable Commercial Storefronts** (`CityChunk.js`, `SpatialGrid.js`, `main.js`, `Particles.js`):
+  - Ground-floor commercial glass storefronts shatter into voxel shards when rammed by Titan mode or a 20+ zombie swarm.
+  - Breaching disables the building obstacle AABB, opening a walkable interior lobby shortcut that allows hordes to bypass street barricades and flank entrenched snipers.
+
+---
+
 ## [2.10.0] - 2026-09-13 — "Faster Hazmat Decontamination & Fortified Quarantine Zones"
 
 ### Changed — Hazmat Mist & Last Stand Calibration (@designer & @qa)

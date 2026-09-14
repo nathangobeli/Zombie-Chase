@@ -26,6 +26,9 @@ export class TrafficManager {
     this.taillightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
     this.windowMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1 });
     this.wheelMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.8 });
+    this.riotRedLightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    this.riotBlueLightMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
+    this.riotMistRingMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
   }
 
   _createCarGeometry() {
@@ -82,6 +85,73 @@ export class TrafficManager {
     return group;
   }
 
+  _createRiotVehicleGeometry() {
+    const group = new THREE.Group();
+
+    // 1. Armored Chassis (Dark SWAT navy)
+    const bodyGeom = new THREE.BoxGeometry(2.2, 0.85, 4.4);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.4 });
+    const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
+    bodyMesh.position.set(0, 0.65, 0);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    group.add(bodyMesh);
+
+    // 2. White Door Livery Stripe
+    const stripeGeom = new THREE.BoxGeometry(2.24, 0.3, 2.2);
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2 });
+    const stripeMesh = new THREE.Mesh(stripeGeom, stripeMat);
+    stripeMesh.position.set(0, 0.65, 0);
+    group.add(stripeMesh);
+
+    // 3. Reinforced Cabin
+    const roofGeom = new THREE.BoxGeometry(1.8, 0.7, 2.4);
+    const roofMesh = new THREE.Mesh(roofGeom, this.windowMat);
+    roofMesh.position.set(0, 1.35, -0.2);
+    roofMesh.castShadow = true;
+    group.add(roofMesh);
+
+    // 4. Heavy Steel Front Bull-Bar
+    const barGeom = new THREE.BoxGeometry(2.3, 0.45, 0.25);
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 });
+    const barMesh = new THREE.Mesh(barGeom, barMat);
+    barMesh.position.set(0, 0.55, -2.25);
+    group.add(barMesh);
+
+    // 5. Emergency Flashing Lightbars on Roof
+    const lightGeom = new THREE.BoxGeometry(0.5, 0.16, 0.25);
+    const redLight = new THREE.Mesh(lightGeom, this.riotRedLightMat.clone());
+    redLight.position.set(-0.4, 1.75, -0.2);
+    const blueLight = new THREE.Mesh(lightGeom, this.riotBlueLightMat.clone());
+    blueLight.position.set(0.4, 1.75, -0.2);
+    group.add(redLight);
+    group.add(blueLight);
+
+    // 6. 360-degree Mist Emitter Ring on Ground
+    const mistGeom = new THREE.RingGeometry(4.8, 5.5, 32);
+    mistGeom.rotateX(-Math.PI / 2);
+    const mistRing = new THREE.Mesh(mistGeom, this.riotMistRingMat.clone());
+    mistRing.position.set(0, 0.04, 0);
+    group.add(mistRing);
+
+    // 7. Wheels
+    const wheelGeom = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 8);
+    wheelGeom.rotateZ(Math.PI / 2);
+    const wPositions = [
+      [-1.1, 0.36, -1.3],
+      [1.1, 0.36, -1.3],
+      [-1.1, 0.36, 1.3],
+      [1.1, 0.36, 1.3],
+    ];
+    for (const [wx, wy, wz] of wPositions) {
+      const wheel = new THREE.Mesh(wheelGeom, this.wheelMat);
+      wheel.position.set(wx, wy, wz);
+      group.add(wheel);
+    }
+
+    return { group, redLight, blueLight, mistRing };
+  }
+
   setDifficulty(difficulty) {
     this.activeDifficulty = difficulty;
   }
@@ -100,7 +170,7 @@ export class TrafficManager {
   /**
    * Spawns a vehicle driving down an open roadway lane toward Patient Zero
    */
-  spawnVehicle(pzX = 0, pzZ = 0, cityStreamer = null, spatialGrid = null, stage = 2) {
+  spawnVehicle(pzX = 0, pzZ = 0, cityStreamer = null, spatialGrid = null, stage = 2, panicLevel = 0, forceRiot = false) {
     if (this.activeDifficulty === 'casual' || stage <= 1) return null; // 0 moving cars in casual & Stage 1
 
     let maxVehicles = 3;
@@ -152,47 +222,79 @@ export class TrafficManager {
       ];
     }
 
-    const lane = candidateLanes[Math.floor(Math.random() * candidateLanes.length)];
+    let chosenLane = null;
     let x = 0;
     let z = 0;
     let vx = 0;
     let vz = 0;
-    const angle = lane.angle;
-    const spawnDist = 45.0 + Math.random() * 20.0;
+    let angle = 0;
 
-    if (lane.axis === 'z') {
-      x = lane.fixedX;
-      z = pzZ - lane.dirZ * spawnDist;
-      vx = 0;
-      vz = lane.dirZ * baseSpeed;
-    } else {
-      z = lane.fixedZ;
-      x = pzX - lane.dirX * spawnDist;
-      vx = lane.dirX * baseSpeed;
-      vz = 0;
-    }
+    const maxAttempts = Math.min(candidateLanes.length, 8);
+    const startIdx = Math.floor(Math.random() * candidateLanes.length);
 
-    // 2. AABB Building Collision Check: Verify spawn point does not overlap any building
-    if (spatialGrid && spatialGrid.obstacles) {
-      const halfW = 1.1;
-      const halfD = 2.2;
-      const spawnMinX = x - halfW;
-      const spawnMaxX = x + halfW;
-      const spawnMinZ = z - halfD;
-      const spawnMaxZ = z + halfD;
-      for (let i = 0; i < spatialGrid.obstacles.length; i++) {
-        const obs = spatialGrid.obstacles[i];
-        if (obs.isCar) continue; // Only buildings define impassable bounds
-        if (obs.minX <= spawnMaxX && obs.maxX >= spawnMinX && obs.minZ <= spawnMaxZ && obs.maxZ >= spawnMinZ) {
-          return null; // Reject spawn inside building footprint
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const lane = candidateLanes[(startIdx + attempt) % candidateLanes.length];
+      const spawnDist = 45.0 + Math.random() * 20.0;
+
+      if (lane.axis === 'z') {
+        x = lane.fixedX;
+        z = pzZ - lane.dirZ * spawnDist;
+        vx = 0;
+        vz = lane.dirZ * baseSpeed;
+      } else {
+        z = lane.fixedZ;
+        x = pzX - lane.dirX * spawnDist;
+        vx = lane.dirX * baseSpeed;
+        vz = 0;
+      }
+      angle = lane.angle;
+
+      // 2. AABB Building Collision Check: Verify spawn point does not overlap any building
+      let blocked = false;
+      if (spatialGrid && spatialGrid.obstacles) {
+        const halfW = 1.1;
+        const halfD = 2.2;
+        const spawnMinX = x - halfW;
+        const spawnMaxX = x + halfW;
+        const spawnMinZ = z - halfD;
+        const spawnMaxZ = z + halfD;
+        for (let i = 0; i < spatialGrid.obstacles.length; i++) {
+          const obs = spatialGrid.obstacles[i];
+          if (obs.isCar) continue; // Only buildings define impassable bounds
+          if (obs.minX <= spawnMaxX && obs.maxX >= spawnMinX && obs.minZ <= spawnMaxZ && obs.maxZ >= spawnMinZ) {
+            blocked = true;
+            break;
+          }
         }
+      }
+
+      if (!blocked) {
+        chosenLane = lane;
+        break;
       }
     }
 
-    // Clone car mesh
-    const mesh = this.carGeom.clone();
-    const colorMat = this.materials[Math.floor(Math.random() * this.materials.length)];
-    mesh.children[0].material = colorMat; // Set body material
+    if (!chosenLane) return null;
+
+    // 3. Riot Vehicle vs Standard Vehicle roll (Panic 30-60%)
+    const isRiot = forceRiot || (panicLevel >= 0.30 && Math.random() < 0.65);
+    let mesh;
+    let redLight = null;
+    let blueLight = null;
+    let mistRing = null;
+
+    if (isRiot) {
+      const riotData = this._createRiotVehicleGeometry();
+      mesh = riotData.group;
+      redLight = riotData.redLight;
+      blueLight = riotData.blueLight;
+      mistRing = riotData.mistRing;
+    } else {
+      mesh = this.carGeom.clone();
+      const colorMat = this.materials[Math.floor(Math.random() * this.materials.length)];
+      mesh.children[0].material = colorMat;
+    }
+
     mesh.position.set(x, 0.01, z);
     mesh.rotation.y = angle;
     this.scene.add(mesh);
@@ -200,6 +302,11 @@ export class TrafficManager {
     const vehicle = {
       id: Math.random(),
       mesh,
+      isRiotVehicle: isRiot,
+      redLight,
+      blueLight,
+      mistRing,
+      riotMistRadius: 5.5,
       x,
       z,
       y: 0.01,
@@ -207,8 +314,8 @@ export class TrafficManager {
       vz,
       speed: baseSpeed,
       angle,
-      width: 2.0,
-      length: 4.2,
+      width: isRiot ? 2.4 : 2.0,
+      length: isRiot ? 4.6 : 4.2,
       isCrushed: false,
       crushTimer: 0,
       crushVy: 0,
@@ -253,7 +360,8 @@ export class TrafficManager {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0 && patientZero) {
       this.spawnTimer = spawnInterval + Math.random() * 1.5;
-      this.spawnVehicle(patientZero.x, patientZero.z, cityStreamer, spatialGrid, stage);
+      const panic = entityManager ? (entityManager.panicLevel || 0) : 0;
+      this.spawnVehicle(patientZero.x, patientZero.z, cityStreamer, spatialGrid, stage, panic);
     }
 
     const pz = patientZero;
@@ -323,6 +431,45 @@ export class TrafficManager {
           this.scene.remove(v.mesh);
           this.vehicles.splice(i, 1);
           continue;
+        }
+      }
+
+      // Riot / Emergency Vehicle 360-degree fast-cure mist (0.4s cure rate)
+      if (v.isRiotVehicle) {
+        const flash = Math.sin((gameTime || 0) * 18.0 + v.id) > 0;
+        if (v.redLight) v.redLight.material.color.setHex(flash ? 0xff2222 : 0x440000);
+        if (v.blueLight) v.blueLight.material.color.setHex(!flash ? 0x00e5ff : 0x002244);
+        if (v.mistRing) {
+          v.mistRing.rotation.z += dt * 1.8;
+          v.mistRing.material.opacity = 0.28 + Math.sin((gameTime || 0) * 8.0) * 0.15;
+        }
+
+        // 360-degree continuous decontamination mist on follower zombies
+        if (entityManager && entityManager.zombies) {
+          for (let zi = entityManager.zombies.length - 1; zi >= 0; zi--) {
+            const z = entityManager.zombies[zi];
+            const distToRiot = Math.hypot(z.x - v.x, z.z - v.z);
+            if (distToRiot <= v.riotMistRadius) {
+              z.riotMistExposure = (z.riotMistExposure || 0) + dt;
+              const cureWindow = (entityManager.mutations && entityManager.mutations.bruteBone) ? (0.4 * 1.4) : 0.4;
+              if (z.riotMistExposure >= cureWindow) {
+                entityManager.decontaminateFollowerZombie(z);
+              }
+            }
+          }
+        }
+
+        // 360-degree mist impact on Patient Zero
+        if (pz) {
+          const pzDistToRiot = Math.hypot(pz.x - v.x, pz.z - v.z);
+          if (pzDistToRiot <= v.riotMistRadius && !entityManager?.isSprayInvulnerable) {
+            pz.isSpraySlowed = true;
+            if (entityManager && entityManager.zombies && entityManager.zombies.length === 0) {
+              if (entityManager.accumulateLastStandExposure) {
+                entityManager.accumulateLastStandExposure(dt);
+              }
+            }
+          }
         }
       }
 

@@ -203,6 +203,9 @@ async function runPlaytest() {
     const trafficHazardCheck = await page.evaluate(() => {
       const app = window.__GAME_APP__;
       if (!app?.trafficManager) return { trafficActive: false, vehicleSpawned: false, stage1Rejected: false };
+      // Clear existing vehicles to ensure capacity for test vehicle
+      app.trafficManager.vehicles.forEach(v => app.scene.remove(v.mesh));
+      app.trafficManager.vehicles = [];
       // Stage 1 must reject moving vehicle spawn
       const vStage1 = app.trafficManager.spawnVehicle(app.entityManager.patientZero.x, app.entityManager.patientZero.z, app.cityStreamer, app.spatialGrid, 1);
       // Stage 2 permits moving vehicle spawn
@@ -876,6 +879,272 @@ async function runPlaytest() {
     });
     console.log('[Playtest] Quarantine Overrun victory check:', quarantineOverrunCheck);
 
+    // 3b6. QA Check: Panic Pacing, Media Blackout, & Quarantine Panic Reduction (@designer & @qa)
+    console.log('[Playtest] Testing Panic Pacing, Media Blackout & Quarantine Panic Reduction...');
+    const panicPacingCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
+      if (!em) return { success: false, reason: 'missing entityManager' };
+
+      em.setPanicLevel(0.50);
+      const initialPanic = em.panicLevel;
+
+      // 1. Quarantine clear reduced panic by 20%
+      em.reducePanic(0.20);
+      const panicAfterQuarantine = em.panicLevel;
+      const reducedByQuarantine = Math.abs(initialPanic - panicAfterQuarantine - 0.20) < 0.01;
+
+      // 2. Media Blackout reduces panic by 15% and pauses for 10s
+      em.activatePowerup('media_blackout');
+      const panicAfterBlackout = em.panicLevel;
+      const reducedByBlackout = Math.abs(panicAfterQuarantine - panicAfterBlackout - 0.15) < 0.01;
+      const blackoutTimerActive = em.mediaBlackoutTimer >= 9.9;
+
+      // 3. Passive panic growth paused while blackout is active
+      const preUpdatePanic = em.panicAccumulated;
+      em.update(0.1, { x: 0, z: 0 }, app.spatialGrid);
+      const panicGrowthPaused = (em.panicAccumulated === preUpdatePanic);
+
+      return {
+        reducedByQuarantine,
+        reducedByBlackout,
+        blackoutTimerActive,
+        panicGrowthPaused,
+        success: reducedByQuarantine && reducedByBlackout && blackoutTimerActive && panicGrowthPaused,
+      };
+    });
+    console.log('[Playtest] Panic Pacing & Media Blackout check:', panicPacingCheck);
+
+    // 3b7. QA Check: Advanced Enemies (Riot Vehicles, Attack Helicopters & Armored Tanks) (@designer & @qa)
+    console.log('[Playtest] Testing Advanced Enemies Escalation (Riot Vehicles, Helicopters, Tanks)...');
+    const advancedEnemiesCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
+      const tm = app?.trafficManager;
+      if (!em || !tm) return { success: false, reason: 'missing managers' };
+
+      // 1. 30% Panic: Riot Vehicles spawn and emit 360 mist
+      em.setPanicLevel(0.35);
+      tm.vehicles.forEach(v => app.scene.remove(v.mesh));
+      tm.vehicles = [];
+      let riotCar = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        riotCar = tm.spawnVehicle(em.patientZero.x, em.patientZero.z, app.cityStreamer, app.spatialGrid, 2, 0.35, true);
+        if (riotCar) break;
+      }
+      const isRiotVehicle = !!(riotCar && riotCar.isRiotVehicle === true && riotCar.mistRing);
+
+      // 2. 60% Panic: Attack Helicopters spawn, fly at Y=18, spotlight tracks PZ
+      em.setPanicLevel(0.65);
+      em._updateHelicopters(0.016, em.patientZero);
+      const hasHelicopter = em.helicopters.length >= 1;
+      const heli = em.helicopters[0];
+      const heliY = heli ? heli.y : 0;
+      const heliSpotlight = heli && heli.meshData && !!heli.meshData.cone;
+
+      // Heli lock-on and airstrike trigger test
+      let airstrikeTriggered = false;
+      const originalTrigger = em.triggerAirstrike;
+      em.triggerAirstrike = (x, z) => {
+        airstrikeTriggered = true;
+        originalTrigger.call(em, x, z);
+      };
+      if (heli) {
+        heli.x = em.patientZero.x;
+        heli.z = em.patientZero.z;
+        heli.lockOnTimer = 2.0;
+        em._updateHelicopters(0.016, em.patientZero);
+      }
+      em.triggerAirstrike = originalTrigger;
+
+      // 3. 85% Panic: Armored Battle Tanks deploy, aim turret, fire shells
+      em.setPanicLevel(0.90);
+      em._updateTanks(0.016, em.patientZero, app.spatialGrid);
+      const hasTank = em.tanks.length >= 1;
+      const tank = em.tanks[0];
+      const tankTurret = tank && tank.meshData && !!tank.meshData.turret;
+
+      // Tank destruction by Titan ramming
+      em.isTitan = true;
+      em.titanVirusTimer = 5.0;
+      let tankDestroyedByTitan = false;
+      if (tank) {
+        tank.x = em.patientZero.x + 1.0;
+        tank.z = em.patientZero.z + 1.0;
+        const tankCountBefore = em.tanks.length;
+        em._updateTanks(0.016, em.patientZero, app.spatialGrid);
+        tankDestroyedByTitan = (em.tanks.length < tankCountBefore);
+      }
+
+      // Tank destruction by 40+ Phalanx overwhelm
+      em.isTitan = false;
+      em.titanVirusTimer = 0;
+      const tank2 = em.spawnTank(em.patientZero.x + 1.2, em.patientZero.z + 1.2);
+      em.isPhalanx = true;
+      // Temporarily give player 45 zombies
+      const dummyZombies = [];
+      for (let i = 0; i < 45; i++) dummyZombies.push({ x: 0, z: 0, radius: 0.5 });
+      const origZombies = em.zombies;
+      em.zombies = dummyZombies;
+      const tankCountBefore2 = em.tanks.length;
+      em._updateTanks(0.016, em.patientZero, app.spatialGrid);
+      const tankDestroyedByPhalanx = (em.tanks.length < tankCountBefore2);
+      em.zombies = origZombies;
+      em.isPhalanx = false;
+
+      return {
+        isRiotVehicle: !!isRiotVehicle,
+        hasHelicopter,
+        heliY,
+        heliSpotlight: !!heliSpotlight,
+        airstrikeTriggered,
+        hasTank,
+        tankTurret: !!tankTurret,
+        tankDestroyedByTitan,
+        tankDestroyedByPhalanx,
+        success: !!(isRiotVehicle && hasHelicopter && heliY === 18 && airstrikeTriggered && hasTank && tankDestroyedByTitan && tankDestroyedByPhalanx),
+      };
+    });
+    console.log('[Playtest] Advanced Enemies check:', advancedEnemiesCheck);
+
+    // 3b8. QA Check: Gamepad API & Phalanx Formation (@designer & @qa)
+    console.log('[Playtest] Testing Gamepad API & Phalanx Formation...');
+    const gamepadPhalanxCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const input = app?.inputController;
+      const em = app?.entityManager;
+      if (!input || !em) return { success: false, reason: 'missing controller' };
+
+      // 1. Phalanx toggle via controller
+      input.setPhalanx(true);
+      const phalanxActive = input.isPhalanx === true && em.isPhalanx === true;
+
+      // 2. Phalanx triggers shield_wall formation in Boids
+      em.update(0.016, { x: 0, z: 0 }, app.spatialGrid);
+      const formationIsShieldWall = em.currentFormation === 'shield_wall';
+
+      // 3. Release phalanx
+      input.setPhalanx(false);
+      const phalanxReleased = input.isPhalanx === false && em.isPhalanx === false;
+
+      // 4. Gamepad polling method exists and does not crash
+      const hasGamepadPolling = typeof input.pollGamepad === 'function';
+      input.pollGamepad();
+
+      return {
+        phalanxActive,
+        formationIsShieldWall,
+        phalanxReleased,
+        hasGamepadPolling,
+        success: phalanxActive && formationIsShieldWall && phalanxReleased && hasGamepadPolling,
+      };
+    });
+    console.log('[Playtest] Gamepad & Phalanx check:', gamepadPhalanxCheck);
+
+    // 3b9. QA Check: Roguelite Mutation Rewards Modal & Buffs (@designer & @qa)
+    console.log('[Playtest] Testing Roguelite Mutation Rewards Modal & Buffs...');
+    const mutationRewardsCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
+      const modal = document.getElementById('mutation-modal');
+      if (!em || !modal) return { success: false, reason: 'missing modal/em' };
+
+      // 1. Trigger mutation modal
+      em.onShowMutationModal();
+      const modalVisible = !modal.classList.contains('hidden');
+      const loopPaused = app.isMutationSelecting === true;
+
+      // 2. Test applying 'bruteBone'
+      em.applyMutation('bruteBone');
+      const bruteBoneApplied = em.mutations.bruteBone === true;
+      const cureThresholdBoosted = Math.abs(em.followerCureThreshold - (0.55 * 1.4)) < 0.01;
+
+      // 3. Test applying 'hyperInfectious'
+      em.applyMutation('hyperInfectious');
+      const hyperInfectiousApplied = em.mutations.hyperInfectious === true;
+      const infectionReachBoosted = em.infectionHitRadiusMultiplier === 1.25;
+
+      // 4. Test applying 'acidicBlood' and verify follower decontamination leaves an acid puddle
+      em.applyMutation('acidicBlood');
+      const acidicBloodApplied = em.mutations.acidicBlood === true;
+      const dummyZombie = { id: 9999, x: 5, z: 5, radius: 0.5 };
+      em.zombies.push(dummyZombie);
+      const puddlesBefore = em.acidPuddles.length;
+      em.decontaminateFollowerZombie(dummyZombie);
+      const acidPuddleSpawned = (em.acidPuddles.length > puddlesBefore);
+
+      // Close modal
+      modal.classList.add('hidden');
+      app.isMutationSelecting = false;
+
+      return {
+        modalVisible,
+        loopPaused,
+        bruteBoneApplied,
+        cureThresholdBoosted,
+        hyperInfectiousApplied,
+        infectionReachBoosted,
+        acidicBloodApplied,
+        acidPuddleSpawned,
+        success: modalVisible && loopPaused && bruteBoneApplied && cureThresholdBoosted && hyperInfectiousApplied && infectionReachBoosted && acidicBloodApplied && acidPuddleSpawned,
+      };
+    });
+    console.log('[Playtest] Mutation Rewards check:', mutationRewardsCheck);
+
+    // 3b10. QA Check: Systemic Environmental Hazards & Storefront Breaches (@designer & @qa)
+    console.log('[Playtest] Testing Environmental Hazards (Puddles, Sparks, Toxic Water) & Storefront Breaches...');
+    const hazardsStorefrontCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
+      const sg = app?.spatialGrid;
+      if (!em || !sg) return { success: false, reason: 'missing managers' };
+
+      // 1. Hydrant smashed -> water puddle spawned
+      const waterBefore = em.waterPuddles.length;
+      em.spawnWaterPuddle(10, 10, false);
+      const waterSpawned = em.waterPuddles.length > waterBefore;
+      const wp = em.waterPuddles[em.waterPuddles.length - 1];
+
+      // 2. Street lamp smashed nearby -> electrifies water puddle and stuns hazmat
+      em.electrifyWaterPuddleNear(10, 10, 6.0);
+      const isElectrified = wp.isElectrified === true;
+      const dummyHazmat = { x: 10.5, z: 10.5, radius: 0.5, stunTimer: 0 };
+      em.hazmats.push(dummyHazmat);
+      em._updatePuddles(0.016);
+      const hazmatStunnedByElectricity = dummyHazmat.stunTimer >= 2.9;
+
+      // 3. Titan interaction poisons water puddle -> converts civilians
+      em.poisonWaterPuddleNear(10, 10, 4.0);
+      const isToxic = wp.isToxic === true;
+      const dummyCiv = { id: 8888, x: 10.2, z: 10.2, radius: 0.5, vx: 0, vz: 0, hidden: false, isCaptive: false };
+      em.civilians.push(dummyCiv);
+      const zombiesBefore = em.zombies.length;
+      em._updatePuddles(0.016);
+      const civInfectedByToxicWater = (em.zombies.length > zombiesBefore);
+
+      // 4. Commercial Storefront Breached by 20+ horde
+      const storefrontObs = {
+        minX: 20, maxX: 30, minZ: 20, maxZ: 30,
+        centerX: 25, centerZ: 25, halfW: 5, halfD: 5,
+        isStorefront: true, breached: false, disabled: false,
+      };
+      sg.obstacles.push(storefrontObs);
+      const movingEntity = { x: 25, z: 19.5, radius: 0.6, isTitan: false, hordeCount: 22 };
+      sg.resolveObstacles(movingEntity, 0.6);
+      const storefrontBreached = storefrontObs.breached === true && storefrontObs.disabled === true;
+
+      return {
+        waterSpawned,
+        isElectrified,
+        hazmatStunnedByElectricity,
+        isToxic,
+        civInfectedByToxicWater,
+        storefrontBreached,
+        success: waterSpawned && isElectrified && hazmatStunnedByElectricity && isToxic && civInfectedByToxicWater && storefrontBreached,
+      };
+    });
+    console.log('[Playtest] Environmental Hazards & Storefront Breaches check:', hazardsStorefrontCheck);
+
     // 3c. Test Horde Loss / Alone & Hunted Survival Countdown and Game Over (@designer)
     console.log('[Playtest] Testing Horde Loss & Alone Survival Countdown...');
     await page.evaluate(() => {
@@ -1329,6 +1598,31 @@ async function runPlaytest() {
 
     if (!quarantineOverrunCheck.success) {
       console.error('[Playtest FAILED] Quarantine Fortress overrun rewards check failed:', quarantineOverrunCheck);
+      process.exit(1);
+    }
+
+    if (!panicPacingCheck.success) {
+      console.error('[Playtest FAILED] Panic Pacing & Media Blackout check failed:', panicPacingCheck);
+      process.exit(1);
+    }
+
+    if (!advancedEnemiesCheck.success) {
+      console.error('[Playtest FAILED] Advanced Enemies check failed:', advancedEnemiesCheck);
+      process.exit(1);
+    }
+
+    if (!gamepadPhalanxCheck.success) {
+      console.error('[Playtest FAILED] Gamepad & Phalanx check failed:', gamepadPhalanxCheck);
+      process.exit(1);
+    }
+
+    if (!mutationRewardsCheck.success) {
+      console.error('[Playtest FAILED] Mutation Rewards check failed:', mutationRewardsCheck);
+      process.exit(1);
+    }
+
+    if (!hazardsStorefrontCheck.success) {
+      console.error('[Playtest FAILED] Environmental Hazards & Storefront Breaches check failed:', hazardsStorefrontCheck);
       process.exit(1);
     }
 

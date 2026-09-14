@@ -316,8 +316,9 @@ class GameApp {
     // 4. Audio System (E6)
     this.audioSystem = new AudioSystem();
 
-    // 5. Input Controller with Squeeze Support
+    // 5. Input Controller with Squeeze & Phalanx Support
     this.squeezeBtn = document.getElementById('btn-squeeze');
+    this.phalanxBtn = document.getElementById('btn-phalanx');
     this.wardensSilencedCount = 0;
     this.civiliansSlippedCount = 0;
     this.inputController = new InputController(
@@ -326,7 +327,9 @@ class GameApp {
       (dirX, dirZ) => this._onAvatarTransferRequest(dirX, dirZ),
       () => this._onFrenzyRequest(),
       (active) => this._onSqueezeChange(active),
-      this.squeezeBtn
+      this.squeezeBtn,
+      (active) => this._onPhalanxChange(active),
+      this.phalanxBtn
     );
 
     // 6. Camera building occlusion raycasting & transparency state
@@ -614,6 +617,9 @@ class GameApp {
         this.particles.burstSparks(prop.x, prop.z, 20);
         shakeIntensity = 0.22;
         floatingText = '💥 LAMP SMASHED! +25';
+        if (this.entityManager && this.entityManager.electrifyWaterPuddleNear) {
+          this.entityManager.electrifyWaterPuddleNear(prop.x, prop.z);
+        }
       } else if (prop.type === 'bush') {
         this.particles.burstLeaves(prop.x, prop.z, 24);
         floatingText = '🍃 BUSH CRUSHED! +25';
@@ -624,6 +630,10 @@ class GameApp {
         this.particles.burstWaterGeyser(prop.x, prop.z, 25);
         shakeIntensity = 0.20;
         floatingText = '💦 HYDRANT BURST! +25';
+        if (this.entityManager && this.entityManager.spawnWaterPuddle) {
+          const isToxic = !!this.entityManager.isTitan;
+          this.entityManager.spawnWaterPuddle(prop.x, prop.z, isToxic);
+        }
       } else if (prop.type === 'trash') {
         this.particles.burstDustCloud(prop.x, prop.z, 14);
         floatingText = '💥 TRASH CAN SMASH! +25';
@@ -851,6 +861,28 @@ class GameApp {
       if (this.cameraController) {
         this.cameraController.triggerShake(0.35, 0.5);
       }
+    };
+
+    // Storefront Breached Event (@designer)
+    if (this.spatialGrid) {
+      this.spatialGrid.onStorefrontBreached = (obs, hitDirX, hitDirZ) => {
+        if (this.audioSystem) this.audioSystem.playExplosion();
+        if (this.particles) this.particles.burstGlassShards(obs.centerX, obs.centerZ, 35);
+        if (this.cameraController) this.cameraController.triggerShake(0.35, 0.45);
+        this._showFloatingText('🏬 STOREFRONT BREACHED! +150', obs.centerX, obs.centerZ, 'fct-powerup');
+        this._showToast('🏬 STOREFRONT SHATTERED: INTERIOR LOBBY FUNNEL OPENED!');
+        if (this.entityManager) {
+          this.entityManager.score = (this.entityManager.score || 0) + 150;
+        }
+        if (this.inputController) {
+          this.inputController.vibrate([30, 20, 30]);
+        }
+      };
+    }
+
+    // Roguelite Mutation Modal Callback (@designer)
+    this.entityManager.onShowMutationModal = () => {
+      this._openMutationModal();
     };
   }
 
@@ -1470,6 +1502,48 @@ class GameApp {
     }
   }
 
+  _onPhalanxChange(active) {
+    if (!this.entityManager) return;
+    this.entityManager.setPhalanx(active);
+    if (window.__GAME_STATE__) {
+      window.__GAME_STATE__.isPhalanx = !!active;
+    }
+    if (active) {
+      if (this.audioSystem && this.audioSystem.playSqueezeWhoosh) this.audioSystem.playSqueezeWhoosh();
+      this.inputController.vibrate([25, 15, 25]);
+      this._showToast('🛡️ PHALANX FORMATION ACTIVATED!');
+    }
+  }
+
+  _openMutationModal() {
+    this.isMutationSelecting = true;
+    const modal = document.getElementById('mutation-modal');
+    if (!modal) return;
+
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+
+    const cards = modal.querySelectorAll('.mutation-card');
+    cards.forEach(card => {
+      const newCard = card.cloneNode(true);
+      card.parentNode.replaceChild(newCard, card);
+
+      newCard.addEventListener('click', () => {
+        const mutationId = newCard.dataset.mutation;
+        if (mutationId && this.entityManager) {
+          this.entityManager.applyMutation(mutationId);
+        }
+        modal.style.display = 'none';
+        modal.classList.add('hidden');
+        this.isMutationSelecting = false;
+        if (this.audioSystem && this.audioSystem.playHighScoreFanfare) {
+          this.audioSystem.playHighScoreFanfare();
+        }
+        this._showToast(`🧬 MUTATION ACQUIRED: ${mutationId.toUpperCase()}!`);
+      });
+    });
+  }
+
   _triggerVignetteFlash() {
     this._vignetteFlashTime = 0.5; // Flash for 0.5 seconds
   }
@@ -1765,10 +1839,11 @@ class GameApp {
     this.lastTime = currentTime;
     const timeSec = currentTime / 1000;
 
-    // In STATE_MENU: Simulation paused, render idle world backdrop, update telemetry
-    if (this.gameState === 'STATE_MENU') {
+    // In STATE_MENU or when choosing mutation: Simulation paused, render idle backdrop
+    if (this.gameState === 'STATE_MENU' || this.isMutationSelecting) {
       if (window.__GAME_STATE__) {
-        window.__GAME_STATE__.gameState = 'STATE_MENU';
+        window.__GAME_STATE__.gameState = this.gameState;
+        window.__GAME_STATE__.isMutationSelecting = !!this.isMutationSelecting;
       }
       this._updateHUD(0);
       this.renderer.info.reset();
@@ -2134,6 +2209,13 @@ class GameApp {
       window.__GAME_STATE__.civiliansSlipped = this.civiliansSlippedCount || 0;
       window.__GAME_STATE__.slimePuddlesActive = this.entityManager.slimeTrail ? this.entityManager.slimeTrail.length : 0;
       window.__GAME_STATE__.isSqueeze = !!this.entityManager.isSqueeze;
+      window.__GAME_STATE__.isPhalanx = !!this.entityManager.isPhalanx;
+      window.__GAME_STATE__.panicLevel = Math.round((this.entityManager.panicLevel || 0) * 100) / 100;
+      window.__GAME_STATE__.mutations = this.entityManager.mutations || { acidicBlood: false, bruteBone: false, hyperInfectious: false };
+      window.__GAME_STATE__.helicoptersActive = this.entityManager.helicopters ? this.entityManager.helicopters.length : 0;
+      window.__GAME_STATE__.tanksActive = this.entityManager.tanks ? this.entityManager.tanks.length : 0;
+      window.__GAME_STATE__.acidPuddlesActive = this.entityManager.acidPuddles ? this.entityManager.acidPuddles.length : 0;
+      window.__GAME_STATE__.waterPuddlesActive = this.entityManager.waterPuddles ? this.entityManager.waterPuddles.length : 0;
       window.__GAME_STATE__.isTitan = !!this.entityManager.isTitan;
       window.__GAME_STATE__.titanVirusTimer = Math.round((this.entityManager.titanVirusTimer || 0) * 10) / 10;
       window.__GAME_STATE__.pzVisualScale = Math.round((this.entityManager.pzVisualScale || 1.0) * 100) / 100;

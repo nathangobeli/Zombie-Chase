@@ -884,6 +884,9 @@ export class CityChunk {
     const bCenterX = (b.minX + b.maxX) * 0.5;
     const bCenterZ = (b.minZ + b.maxZ) * 0.5;
 
+    // Commercial glass storefronts can be breached by Titan or 20+ horde (@designer)
+    const isStorefront = (bWidth >= 10 && bDepth >= 10 && this.rng() < 0.35);
+
     this.obstacles.push({
       minX: b.minX,
       maxX: b.maxX,
@@ -893,6 +896,8 @@ export class CityChunk {
       centerZ: bCenterZ,
       halfW: bWidth * 0.5,
       halfD: bDepth * 0.5,
+      isStorefront,
+      breached: false,
     });
 
     // Generate hand-made stylized cartoon building with 2-3 stepped stories,

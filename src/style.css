@@ -1983,4 +1983,188 @@ html, body, #game-container, #canvas-container {
   }
 }
 
+/* =========================================================
+   PHALANX / SHIELD WALL BUTTON (@designer & @artist)
+   ========================================================= */
+.hud-btn-phalanx {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px solid rgba(245, 158, 11, 0.4);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
+}
+
+.hud-btn-phalanx .btn-inner {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fbbf24, #d97706);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.45), inset 0 2px 4px rgba(255, 255, 255, 0.5);
+}
+
+.hud-btn-phalanx.active,
+.hud-btn-phalanx:active {
+  transform: scale(0.92);
+  border-color: #f59e0b;
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.9);
+}
+
+.hud-btn-phalanx.active .btn-inner {
+  background: radial-gradient(circle at 35% 35%, #fde68a, #b45309);
+  filter: brightness(1.25);
+}
+
+/* =========================================================
+   ROGUELITE MUTATION MODAL & CARDS (@designer & @artist)
+   ========================================================= */
+.mutation-card-container {
+  background: rgba(15, 23, 42, 0.96);
+  border: 3px solid #10b981;
+  box-shadow: 0 0 45px rgba(16, 185, 129, 0.4), 0 25px 60px rgba(0, 0, 0, 0.9);
+  border-radius: 24px;
+  padding: 32px 28px;
+  max-width: 820px;
+  width: 94%;
+  text-align: center;
+  animation: modal-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  pointer-events: auto;
+}
+
+.mutation-modal-header {
+  margin-bottom: 24px;
+}
+
+.mutation-modal-badge {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid #10b981;
+  color: #34d399;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  padding: 4px 14px;
+  border-radius: 20px;
+  margin-bottom: 10px;
+}
+
+.mutation-modal-title {
+  color: #fff;
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  margin: 0 0 6px 0;
+  text-shadow: 0 0 20px rgba(52, 211, 153, 0.5);
+}
+
+.mutation-modal-subtitle {
+  color: #94a3b8;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.mutation-options-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.mutation-card {
+  background: rgba(30, 41, 59, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.mutation-card:hover,
+.mutation-card:focus {
+  transform: translateY(-8px) scale(1.03);
+  border-color: #34d399;
+  background: rgba(30, 41, 59, 0.98);
+  box-shadow: 0 12px 30px rgba(16, 185, 129, 0.35);
+}
+
+.mutation-card:active {
+  transform: scale(0.97);
+}
+
+.mutation-card-icon {
+  font-size: 2.8rem;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+  transition: transform 0.2s ease;
+}
+
+.mutation-card:hover .mutation-card-icon {
+  transform: scale(1.18);
+}
+
+.mutation-card-title {
+  color: #f1f5f9;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.mutation-card-desc {
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  margin-bottom: 16px;
+  flex-grow: 1;
+}
+
+.mutation-card-badge {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #a7f3d0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 680px) {
+  .mutation-options-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .mutation-card {
+    padding: 16px 14px;
+  }
+  .mutation-card-icon {
+    font-size: 2.2rem;
+    margin-bottom: 6px;
+  }
+  .mutation-modal-title {
+    font-size: 1.7rem;
+  }
+}
+
 

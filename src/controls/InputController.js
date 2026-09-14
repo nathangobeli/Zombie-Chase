@@ -1,16 +1,25 @@
 export class InputController {
-  constructor(containerElement, actionButtonElement, onAvatarTransfer, onFrenzy, onSqueezeChange, squeezeBtnElement) {
+  constructor(containerElement, actionButtonElement, onAvatarTransfer, onFrenzy, onSqueezeChange, squeezeBtnElement, onPhalanxChange, phalanxBtnElement) {
     this.container = containerElement;
     this.actionBtn = actionButtonElement;
-    // Frenzy & Squeeze callbacks
+    // Frenzy, Squeeze & Phalanx callbacks
     this.onAvatarTransfer = onAvatarTransfer;
     this.onFrenzy = onFrenzy;
     this.onSqueezeChange = onSqueezeChange;
     this.squeezeBtn = squeezeBtnElement;
     this.isSqueeze = false;
 
+    this.onPhalanxChange = onPhalanxChange;
+    this.phalanxBtn = phalanxBtnElement;
+    this.isPhalanx = false;
+
     // Movement vector output: { x, z } in range [-1, 1]
     this.inputVector = { x: 0, z: 0 };
+
+    // Gamepad state tracking
+    this._lastGamepadBtn0 = false;
+    this._lastGamepadSqueeze = false;
+    this._lastGamepadPhalanx = false;
 
     // Keyboard state
     this.keys = {
@@ -23,6 +32,8 @@ export class InputController {
       ArrowDown: false,
       ArrowRight: false,
       KeyC: false,
+      KeyX: false,
+      KeyF: false,
       ShiftLeft: false,
       ShiftRight: false,
     };
@@ -57,6 +68,9 @@ export class InputController {
     if (this.squeezeBtn) {
       this.bindSqueezeButton(this.squeezeBtn);
     }
+    if (this.phalanxBtn) {
+      this.bindPhalanxButton(this.phalanxBtn);
+    }
 
     // C6: First-launch controls overlay
     this._showFirstLaunchOverlay();
@@ -73,6 +87,17 @@ export class InputController {
     }
   }
 
+  setPhalanx(active) {
+    if (this.isPhalanx === active) return;
+    this.isPhalanx = active;
+    if (this.phalanxBtn) {
+      this.phalanxBtn.classList.toggle('active', active);
+    }
+    if (this.onPhalanxChange) {
+      this.onPhalanxChange(active);
+    }
+  }
+
   bindSqueezeButton(element) {
     this.squeezeBtn = element;
     if (!element) return;
@@ -86,6 +111,30 @@ export class InputController {
       e.stopPropagation();
       e.preventDefault();
       this.setSqueeze(false);
+    };
+    element.addEventListener('pointerdown', onStart);
+    element.addEventListener('pointerup', onEnd);
+    element.addEventListener('pointercancel', onEnd);
+    element.addEventListener('pointerleave', onEnd);
+    element.addEventListener('mousedown', onStart);
+    element.addEventListener('mouseup', onEnd);
+    element.addEventListener('touchstart', onStart, { passive: false });
+    element.addEventListener('touchend', onEnd, { passive: false });
+  }
+
+  bindPhalanxButton(element) {
+    this.phalanxBtn = element;
+    if (!element) return;
+    const onStart = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.setPhalanx(true);
+      this.vibrate(20);
+    };
+    const onEnd = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.setPhalanx(false);
     };
     element.addEventListener('pointerdown', onStart);
     element.addEventListener('pointerup', onEnd);
@@ -154,6 +203,9 @@ export class InputController {
       if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         this.setSqueeze(true);
       }
+      if (e.code === 'KeyX' || e.key === 'x' || e.key === 'X' || e.code === 'KeyF' || e.key === 'f' || e.key === 'F') {
+        this.setPhalanx(true);
+      }
       if (e.code === 'Space') {
         e.preventDefault();
         // C3: Haptic on frenzy
@@ -176,6 +228,9 @@ export class InputController {
       }
       if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         this.setSqueeze(false);
+      }
+      if (e.code === 'KeyX' || e.key === 'x' || e.key === 'X' || e.code === 'KeyF' || e.key === 'f' || e.key === 'F') {
+        this.setPhalanx(false);
       }
     });
 
@@ -390,8 +445,86 @@ export class InputController {
     this.inputVector.z = 0;
   }
 
+  /**
+   * HTML5 Gamepad API polling:
+   * - Left Stick: movement with deadzone
+   * - South Face Button (Button 0: A/Cross): Frenzy Dash
+   * - Right Trigger (Button 7): Swarm Squeeze
+   * - Left Trigger (Button 6): Phalanx / Shield Wall
+   */
+  pollGamepad() {
+    if (typeof navigator === 'undefined' || !navigator.getGamepads) return null;
+    let gamepads;
+    try {
+      gamepads = navigator.getGamepads();
+    } catch (_) {
+      return null;
+    }
+    if (!gamepads) return null;
+
+    for (let i = 0; i < gamepads.length; i++) {
+      const gp = gamepads[i];
+      if (!gp || !gp.connected) continue;
+
+      // 1. Left Stick movement
+      const axisX = gp.axes && gp.axes[0] !== undefined ? gp.axes[0] : 0;
+      const axisZ = gp.axes && gp.axes[1] !== undefined ? gp.axes[1] : 0;
+      const deadzone = 0.15;
+      const mag = Math.hypot(axisX, axisZ);
+      let gpX = 0;
+      let gpZ = 0;
+      if (mag > deadzone) {
+        const norm = (mag - deadzone) / (1.0 - deadzone);
+        gpX = (axisX / mag) * Math.min(1.0, norm);
+        gpZ = (axisZ / mag) * Math.min(1.0, norm);
+      }
+
+      // D-pad support (standard mapping buttons 14: Left, 15: Right, 12: Up, 13: Down)
+      if (gp.buttons) {
+        if (gp.buttons[14]?.pressed) gpX = -1;
+        if (gp.buttons[15]?.pressed) gpX = 1;
+        if (gp.buttons[12]?.pressed) gpZ = -1;
+        if (gp.buttons[13]?.pressed) gpZ = 1;
+      }
+
+      // 2. South Face Button (Button 0: A / Cross) -> Frenzy Dash
+      const btn0 = gp.buttons && gp.buttons[0] ? (gp.buttons[0].pressed || gp.buttons[0].value > 0.5) : false;
+      if (btn0 && !this._lastGamepadBtn0) {
+        this.vibrate([20, 10, 20]);
+        if (this.onFrenzy) this.onFrenzy();
+      }
+      this._lastGamepadBtn0 = btn0;
+
+      // 3. Right Trigger (Button 7: RT / R2) or Right Bumper (Button 5) -> Swarm Squeeze
+      const btn7 = gp.buttons && gp.buttons[7] ? (gp.buttons[7].pressed || gp.buttons[7].value > 0.3) : false;
+      const btn5 = gp.buttons && gp.buttons[5] ? gp.buttons[5].pressed : false;
+      const squeezeActive = btn7 || btn5;
+      if (squeezeActive !== this._lastGamepadSqueeze) {
+        this._lastGamepadSqueeze = squeezeActive;
+        this.setSqueeze(squeezeActive || this.keys.KeyC || this.keys.ShiftLeft);
+      }
+
+      // 4. Left Trigger (Button 6: LT / L2) or Left Bumper (Button 4) -> Phalanx / Shield Wall
+      const btn6 = gp.buttons && gp.buttons[6] ? (gp.buttons[6].pressed || gp.buttons[6].value > 0.3) : false;
+      const btn4 = gp.buttons && gp.buttons[4] ? gp.buttons[4].pressed : false;
+      const phalanxActive = btn6 || btn4;
+      if (phalanxActive !== this._lastGamepadPhalanx) {
+        this._lastGamepadPhalanx = phalanxActive;
+        this.setPhalanx(phalanxActive || this.keys.KeyX || this.keys.KeyF);
+      }
+
+      if (gpX !== 0 || gpZ !== 0) {
+        return { x: gpX, z: gpZ };
+      }
+    }
+    return null;
+  }
+
   getInput() {
-    // If keyboard is being used, override touch joystick
+    // 1. Poll Gamepad API
+    const gpVector = this.pollGamepad();
+
+    // 2. Keyboard listeners override touch
     let kx = 0;
     let kz = 0;
 
@@ -403,6 +536,10 @@ export class InputController {
     if (kx !== 0 || kz !== 0) {
       const len = Math.hypot(kx, kz);
       return { x: kx / len, z: kz / len };
+    }
+
+    if (gpVector) {
+      return gpVector;
     }
 
     return this.inputVector;

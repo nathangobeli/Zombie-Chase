@@ -575,6 +575,55 @@ export class ParticleSystem {
     }
   }
 
+  /**
+   * Shattering glass shards when storefront lobby is breached
+   */
+  burstGlassShards(x, z, count = 28) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 3.0 + Math.random() * 4.5;
+      const tint = Math.random() > 0.4;
+      this.spawn(
+        x + (Math.random() - 0.5) * 1.5,
+        1.0 + Math.random() * 1.2,
+        z + (Math.random() - 0.5) * 1.5,
+        Math.cos(angle) * spd,
+        2.5 + Math.random() * 4.0,
+        Math.sin(angle) * spd,
+        tint ? 0.38 : 0.95,
+        tint ? 0.85 : 0.98,
+        tint ? 0.96 : 1.0, // Cel cyan glass & reflective white
+        0.35 + Math.random() * 0.3,
+        0.22 + Math.random() * 0.15,
+        false
+      );
+    }
+  }
+
+  /**
+   * Effervescent toxic acid bubbles from acidic blood or poisoned water
+   */
+  burstAcidBubbles(x, z, count = 16) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 0.8 + Math.random() * 1.8;
+      this.spawn(
+        x + Math.cos(angle) * (Math.random() * 1.5),
+        0.1 + Math.random() * 0.3,
+        z + Math.sin(angle) * (Math.random() * 1.5),
+        Math.cos(angle) * spd * 0.4,
+        1.8 + Math.random() * 2.2,
+        Math.sin(angle) * spd * 0.4,
+        0.15,
+        0.95,
+        0.25, // Toxic lime green #22c55e
+        0.45 + Math.random() * 0.3,
+        0.18 + Math.random() * 0.12,
+        true
+      );
+    }
+  }
+
   update(dt) {
     const gravity = -9.8;
     let anyNeedsUpdate = false;

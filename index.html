@@ -162,14 +162,21 @@
       <!-- Bottom HUD: Action Buttons Only (Controls Hint Removed for Mobile Real Estate) -->
       <div class="hud-bottom">
         <div class="action-btn-wrapper interactive-hud">
-          <button id="btn-squeeze" class="hud-btn-squeeze" title="Hold to Squeeze Swarm (C / Shift / Pinch)">
+          <button id="btn-squeeze" class="hud-btn-squeeze" title="Hold to Squeeze Swarm (C / Shift / Pinch / RT)">
             <div class="btn-inner">
               <div class="btn-icon-flash">🏹</div>
               <div class="btn-label" style="font-size: 8px; font-weight: 800; letter-spacing: 0.5px;">SQUEEZE</div>
             </div>
           </button>
 
-          <button id="btn-frenzy" class="frenzy-btn" title="Frenzy Speed Burst (Space)">
+          <button id="btn-phalanx" class="hud-btn-phalanx" title="Hold Phalanx / Shield Wall (X / F / LT)">
+            <div class="btn-inner">
+              <div class="btn-icon-flash">🛡️</div>
+              <div class="btn-label" style="font-size: 8px; font-weight: 800; letter-spacing: 0.5px;">PHALANX</div>
+            </div>
+          </button>
+
+          <button id="btn-frenzy" class="frenzy-btn" title="Frenzy Speed Burst (Space / Gamepad A)">
             <svg class="cooldown-ring" viewBox="0 0 100 100">
               <circle class="ring-bg" cx="50" cy="50" r="44" />
               <circle id="cooldown-circle" class="ring-fill" cx="50" cy="50" r="44" />
@@ -401,6 +408,40 @@
         </div>
 
         <button id="btn-close-leaderboard" class="hud-btn" style="width: 100%; margin-top: 14px; background: rgba(56, 189, 248, 0.25); border-color: #38bdf8;">CLOSE ✕</button>
+      </div>
+    </div>
+
+    <!-- Roguelite Mutation Modal (Pauses game on Quarantine Zone overrun) -->
+    <div id="mutation-modal" class="game-over-modal" style="display: none;">
+      <div class="mutation-card-container">
+        <div class="mutation-modal-header">
+          <div class="mutation-modal-badge">🧬 ROGUELITE UPGRADE</div>
+          <h2 class="mutation-modal-title">MUTATION UNLOCKED!</h2>
+          <p class="mutation-modal-subtitle">CHOOSE ONE PERMANENT RUN ADAPTATION:</p>
+        </div>
+
+        <div class="mutation-options-grid">
+          <div class="mutation-card" id="mutation-acidicBlood" data-mutation="acidicBlood" tabindex="0">
+            <div class="mutation-card-icon">🧪</div>
+            <div class="mutation-card-title">ACIDIC BLOOD</div>
+            <div class="mutation-card-desc">Slain follower zombies leave a toxic green puddle that damages and stuns Hazmats and Military for 3s.</div>
+            <div class="mutation-card-badge">CROWD CONTROL</div>
+          </div>
+
+          <div class="mutation-card" id="mutation-bruteBone" data-mutation="bruteBone" tabindex="0">
+            <div class="mutation-card-icon">🦴</div>
+            <div class="mutation-card-title">BRUTE BONE</div>
+            <div class="mutation-card-desc">Dense skeletal reinforcement increases follower zombie resistance to Hazmat spray mist by 40%.</div>
+            <div class="mutation-card-badge">DEFENSE BUFF</div>
+          </div>
+
+          <div class="mutation-card" id="mutation-hyperInfectious" data-mutation="hyperInfectious" tabindex="0">
+            <div class="mutation-card-icon">☣️</div>
+            <div class="mutation-card-title">HYPER-INFECTIOUS</div>
+            <div class="mutation-card-desc">Virulent airborne pathogens expand stray zombie and civilian infection hitboxes by +25%.</div>
+            <div class="mutation-card-badge">SWARM EXPANSION</div>
+          </div>
+        </div>
       </div>
     </div>
 

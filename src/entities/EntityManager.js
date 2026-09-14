@@ -95,6 +95,26 @@ export class EntityManager {
     this.currentFormation = 'swarm';
     this.movingTimer = 0;
     this.stationaryTimer = 0;
+    this.isPhalanx = false;
+    this.onPhalanxChanged = null;
+
+    // Dynamic Panic Pacing & Reduction
+    this.panicAccumulated = 0;
+    this.panicReduction = 0;
+    this.mediaBlackoutTimer = 0;
+
+    // Roguelite Mutation Rewards
+    this.onShowMutationModal = null; // (callback)
+    this.mutations = { acidicBlood: false, bruteBone: false, hyperInfectious: false };
+    this.infectionHitRadiusMultiplier = 1.0;
+
+    // Advanced Enemies: Attack Helicopters & Tanks
+    this.helicopters = [];
+    this.tanks = [];
+
+    // Systemic Environmental & Acid Hazards
+    this.acidPuddles = [];
+    this.waterPuddles = [];
 
     // G4: Milestone tracking
     this._milestonesUnlocked = new Set();
@@ -117,6 +137,7 @@ export class EntityManager {
     this.slimeTrail = [];
     this.slimeDropTimer = 0;
     this.isSqueeze = false;
+    this.isPhalanx = false;
     this.speedSurgeTimer = 0;
     this.meatMagnetTimer = 0;
     this.titanVirusTimer = 0;
@@ -127,6 +148,33 @@ export class EntityManager {
     this.pzSprayTime = 0;
     this.gameTime = 0;
     this.panicLevel = 0;
+    this.panicAccumulated = 0;
+    this.panicReduction = 0;
+    this.mediaBlackoutTimer = 0;
+    this.followerCureThreshold = 0.55;
+    this.infectionHitRadiusMultiplier = 1.0;
+    this.mutations = { acidicBlood: false, bruteBone: false, hyperInfectious: false };
+
+    // Clean up dynamic meshes for helicopters, tanks, and puddles
+    if (this.scene) {
+      for (const h of this.helicopters) {
+        if (h.mesh) this.scene.remove(h.mesh);
+      }
+      for (const t of this.tanks) {
+        if (t.mesh) this.scene.remove(t.mesh);
+      }
+      for (const ap of this.acidPuddles) {
+        if (ap.mesh) this.scene.remove(ap.mesh);
+      }
+      for (const wp of this.waterPuddles) {
+        if (wp.mesh) this.scene.remove(wp.mesh);
+      }
+    }
+    this.helicopters = [];
+    this.tanks = [];
+    this.acidPuddles = [];
+    this.waterPuddles = [];
+
     this._lastPanicMilestone = 0;
     this.score = 0;
     this.combo = 0;
@@ -395,6 +443,96 @@ export class EntityManager {
     if (this.onSqueezeChanged) {
       this.onSqueezeChanged(this.isSqueeze);
     }
+  }
+
+  /**
+   * Toggle or set Phalanx / Shield Wall formation (defensive ring wrapping Patient Zero)
+   */
+  setPhalanx(isPhalanx) {
+    this.isPhalanx = !!isPhalanx;
+    if (this.onPhalanxChanged) {
+      this.onPhalanxChanged(this.isPhalanx);
+    }
+  }
+
+  /**
+   * Reduce city Panic meter by a specific amount (e.g. 0.20 for Quarantine Overrun, 0.15 for Media Blackout)
+   */
+  reducePanic(amount) {
+    this.panicReduction = (this.panicReduction || 0) + amount;
+    this.panicLevel = Math.max(0.0, Math.min(1.0, this.panicLevel - amount));
+  }
+
+  /**
+   * Directly sets panic level for test assertions or debug tooling
+   */
+  setPanicLevel(val) {
+    this.panicLevel = Math.max(0.0, Math.min(1.0, val));
+    this.panicAccumulated = this.panicLevel;
+    this.panicReduction = 0;
+  }
+
+  /**
+   * Applies permanent Roguelite run mutation:
+   * - 'acidicBlood': Slain followers leave toxic puddles that stun Hazmat/Military for 3s
+   * - 'bruteBone': +40% follower resistance against mist
+   * - 'hyperInfectious': +25% wider infection reach
+   */
+  applyMutation(mutationId) {
+    if (!this.mutations) {
+      this.mutations = { acidicBlood: false, bruteBone: false, hyperInfectious: false };
+    }
+    this.mutations[mutationId] = true;
+
+    if (mutationId === 'bruteBone') {
+      this.followerCureThreshold = 0.55 * 1.4;
+      if (this.onPanicEscalation) {
+        this.onPanicEscalation('🦴 BRUTE BONE MUTATION: +40% MIST RESISTANCE!');
+      }
+    } else if (mutationId === 'hyperInfectious') {
+      this.infectionHitRadiusMultiplier = 1.25;
+      if (this.onPanicEscalation) {
+        this.onPanicEscalation('☣️ HYPER-INFECTIOUS MUTATION: +25% INFECTION REACH!');
+      }
+    } else if (mutationId === 'acidicBlood') {
+      if (this.onPanicEscalation) {
+        this.onPanicEscalation('🧪 ACIDIC BLOOD MUTATION: SLAIN ZOMBIES EMIT STUNNING ACID!');
+      }
+    }
+  }
+
+  /**
+   * Decontaminates a single follower zombie into a civilian, applying Acidic Blood if active
+   */
+  decontaminateFollowerZombie(z) {
+    const idx = this.zombies.indexOf(z);
+    if (idx === -1) return null;
+    const stray = this.zombies.splice(idx, 1)[0];
+    const civ = {
+      id: stray.id,
+      type: 'civilian',
+      x: stray.x,
+      z: stray.z,
+      vx: 0,
+      vz: 0,
+      radius: 0.5,
+      speed: 1.8,
+      fleeSpeed: 3.6,
+      wanderAngle: Math.random() * Math.PI * 2,
+      fleeTimer: 3.0,
+      walkPhase: 0,
+      colorVariation: stray.colorVariation,
+      cureFlail: 1.0,
+      cureImmunity: 2.5,
+    };
+    this.civilians.push(civ);
+    if (this.onCured) {
+      this.onCured(stray.x, stray.z);
+    }
+    if (this.mutations && this.mutations.acidicBlood) {
+      this.spawnAcidPuddle(stray.x, stray.z);
+    }
+    return civ;
   }
 
   /**
@@ -679,6 +817,10 @@ export class EntityManager {
       }
       if (this.onTitanActivated) this.onTitanActivated();
       if (this.onPanicEscalation) this.onPanicEscalation('☣️ TITAN VIRUS ACTIVATED: 3X SCALE & TOTAL CONVERSION!');
+    } else if (typeId === 'media_blackout') {
+      this.reducePanic(0.15);
+      this.mediaBlackoutTimer = 10.0;
+      if (this.onPanicEscalation) this.onPanicEscalation('📡 MEDIA BLACKOUT: -15% PANIC & 10s TRANSMISSION PAUSE!');
     }
   }
 
@@ -781,16 +923,25 @@ export class EntityManager {
       }
     }
 
-    // Panic starts at 0.0 (citizens relaxed and slower) and smoothly scales over 90s + horde size
-    this.panicLevel = Math.min(1.0, this.gameTime / 90.0 + (this.zombies.length / 40.0) * 0.4);
+    // Panic starts at 0.0 (citizens relaxed and slower) and smoothly scales 50% slower (over 180s baseline + horde size)
+    if (this.mediaBlackoutTimer > 0) {
+      this.mediaBlackoutTimer = Math.max(0, this.mediaBlackoutTimer - dt);
+    } else {
+      this.panicAccumulated = (this.panicAccumulated || 0) + dt / 180.0;
+    }
+    const hordePanic = (this.zombies.length / 40.0) * 0.4;
+    this.panicLevel = Math.max(0.0, Math.min(1.0, (this.panicAccumulated || 0) + hordePanic - (this.panicReduction || 0)));
 
-    // Notify milestone when panic reaches notable tiers
-    if (this.panicLevel >= 0.5 && this._lastPanicMilestone < 1) {
+    // Notify milestone when panic reaches notable escalation tiers (@designer)
+    if (this.panicLevel >= 0.30 && this._lastPanicMilestone < 1) {
       this._lastPanicMilestone = 1;
-      if (this.onPanicEscalation) this.onPanicEscalation('PANIC RISING - CITIZENS RUNNING FASTER!');
-    } else if (this.panicLevel >= 0.85 && this._lastPanicMilestone < 2) {
+      if (this.onPanicEscalation) this.onPanicEscalation('🚨 30% PANIC: RIOT VEHICLES DISPATCHED WITH 360° MIST!');
+    } else if (this.panicLevel >= 0.60 && this._lastPanicMilestone < 2) {
       this._lastPanicMilestone = 2;
-      if (this.onPanicEscalation) this.onPanicEscalation('MAXIMUM CITY PANIC - ALL OUT SPRINT!');
+      if (this.onPanicEscalation) this.onPanicEscalation('🚁 60% PANIC: ATTACK HELICOPTER INBOUND WITH SPOTLIGHT!');
+    } else if (this.panicLevel >= 0.85 && this._lastPanicMilestone < 3) {
+      this._lastPanicMilestone = 3;
+      if (this.onPanicEscalation) this.onPanicEscalation('🚨 85% PANIC: ARMORED BATTLE TANKS AT INTERSECTIONS!');
     }
 
     // G1: Combo decay
@@ -880,7 +1031,11 @@ export class EntityManager {
     const inputMag = Math.hypot(inputVector.x, inputVector.z);
 
     // Formations Logic
-    if (inputMag > 0.05) {
+    if (this.isPhalanx) {
+      this.currentFormation = 'shield_wall';
+    } else if (this.isSqueeze) {
+      this.currentFormation = 'squeeze';
+    } else if (inputMag > 0.05) {
       this.stationaryTimer = 0;
       this.movingTimer = (this.movingTimer || 0) + dt;
       if (this.movingTimer > 2.0) {
@@ -1002,6 +1157,7 @@ export class EntityManager {
     const pzPrevX = pz.x - pz.vx * dt;
     const pzPrevZ = pz.z - pz.vz * dt;
     pz.isTitan = !!(this.isTitan && this.titanVirusTimer > 0);
+    pz.hordeCount = this.zombies.length;
     spatialGrid.resolveObstacles(pz, pz.radius * (pz.isTitan ? 1.8 : 1.0), true, pzPrevX, pzPrevZ);
 
     // 4. Populate Spatial Grid
@@ -1096,6 +1252,8 @@ export class EntityManager {
       // Resolve building collisions with a slight cartoony 'boing' bounce
       const zPrevX = z.x - z.vx * dt;
       const zPrevZ = z.z - z.vz * dt;
+      z.isTitan = pz.isTitan;
+      z.hordeCount = this.zombies.length;
       const collision = spatialGrid.resolveObstacles(z, z.radius, true, zPrevX, zPrevZ);
       if (collision) {
         // Slight bouncy repulsion
@@ -1295,19 +1453,20 @@ export class EntityManager {
 
     // 8a. Check Stray Zombie Recruitment:
     // When Patient Zero or any horde member runs into a stray zombie, it joins your horde!
+    const hitRadiusMult = this.infectionHitRadiusMultiplier || 1.0;
     for (let i = this.strayZombies.length - 1; i >= 0; i--) {
       const s = this.strayZombies[i];
       let recruited = false;
 
       const pzDist = Math.hypot(s.x - pz.x, s.z - pz.z);
-      if (pzDist <= s.radius + pz.radius + 0.4) {
+      if (pzDist <= (s.radius + pz.radius + 0.4) * hitRadiusMult) {
         recruited = true;
       }
 
       if (!recruited) {
-        spatialGrid.forEachNearby(s.x, s.z, s.radius + 0.8, (neighbor, distSq) => {
+        spatialGrid.forEachNearby(s.x, s.z, (s.radius + 0.8) * hitRadiusMult, (neighbor, distSq) => {
           if (neighbor.type === 'zombie') {
-            const minDist = s.radius + neighbor.radius + 0.3;
+            const minDist = (s.radius + neighbor.radius + 0.3) * hitRadiusMult;
             if (distSq <= minDist * minDist) {
               recruited = true;
               return true;
@@ -1324,7 +1483,7 @@ export class EntityManager {
 
     // 8b. Check Civilian Infection:
     // When Patient Zero or any horde member touches a civilian, they turn into a zombie!
-    // Meat Magnet triples infection radius
+    // Meat Magnet triples infection radius, Hyper-Infectious adds +25% reach
     const reachBonus = this.meatMagnetTimer > 0 ? 3.0 : 0.0;
     for (let i = this.civilians.length - 1; i >= 0; i--) {
       const c = this.civilians[i];
@@ -1343,14 +1502,14 @@ export class EntityManager {
       let infected = false;
 
       const pzDist = Math.hypot(c.x - pz.x, c.z - pz.z);
-      if (pzDist <= c.radius + pz.radius + 0.15 + reachBonus) {
+      if (pzDist <= (c.radius + pz.radius + 0.15 + reachBonus) * hitRadiusMult) {
         infected = true;
       }
 
       if (!infected) {
-        spatialGrid.forEachNearby(c.x, c.z, c.radius + 0.7 + reachBonus, (neighbor, distSq) => {
+        spatialGrid.forEachNearby(c.x, c.z, (c.radius + 0.7 + reachBonus) * hitRadiusMult, (neighbor, distSq) => {
           if (neighbor.type === 'zombie') {
-            const minDist = c.radius + neighbor.radius + 0.15 + reachBonus;
+            const minDist = (c.radius + neighbor.radius + 0.15 + reachBonus) * hitRadiusMult;
             if (distSq <= minDist * minDist) {
               infected = true;
               return true;
@@ -1511,6 +1670,14 @@ export class EntityManager {
 
     for (let hIdx = this.hazmats.length - 1; hIdx >= 0; hIdx--) {
       const h = this.hazmats[hIdx];
+
+      // Stun check (from Acid or Electrified water puddles)
+      if (h.stunTimer > 0) {
+        h.stunTimer = Math.max(0, h.stunTimer - dt);
+        h.vx = 0;
+        h.vz = 0;
+        continue;
+      }
 
       // Heli drop descent
       if (h.isDropping && h.dropY > 0) {
@@ -1793,6 +1960,14 @@ export class EntityManager {
     // 10b. Update Military Riflemen (18m targeting, building occlusion check, 1.5s charge, 3-target piercing round)
     for (let mi = this.militaryUnits.length - 1; mi >= 0; mi--) {
       const m = this.militaryUnits[mi];
+
+      // Stun check (from Acid or Electrified water puddles)
+      if (m.stunTimer > 0) {
+        m.stunTimer = Math.max(0, m.stunTimer - dt);
+        m.laserTarget = null;
+        m.chargeTimer = 0;
+        continue;
+      }
 
       // Decay bullet tracer shot visual
       if (m.tracerShot) {
@@ -2102,7 +2277,16 @@ export class EntityManager {
       }
     }
 
-    // 13. Quarantine Zones Overrun Evaluation (@designer, @artist & @qa)
+    // 13a. Systemic Environmental & Acid Hazards (@designer)
+    this._updatePuddles(dt);
+
+    // 13b. Attack Helicopters Escalation (@designer)
+    this._updateHelicopters(dt, pz);
+
+    // 13c. Armored Battle Tanks Escalation (@designer)
+    this._updateTanks(dt, pz, spatialGrid);
+
+    // 13d. Quarantine Zones Overrun Evaluation (@designer, @artist & @qa)
     this._updateQuarantineZones(dt);
 
     // 14. Population Streaming & Memory Cleanup
@@ -2743,7 +2927,10 @@ export class EntityManager {
         // 1. Massive Score Bonus: +1,500 points
         this.score += 1500;
 
-        // 2. Free trapped captive civilians
+        // 2. Reduce Panic by 20% on clearing Quarantine Zone (@designer)
+        this.reducePanic(0.20);
+
+        // 3. Free trapped captive civilians
         let freedCount = 0;
         for (let ci = 0; ci < this.civilians.length; ci++) {
           const c = this.civilians[ci];
@@ -2756,12 +2943,577 @@ export class EntityManager {
           }
         }
 
-        // 3. Guaranteed High-Tier Drop: "Titan Virus" or "Meat Magnet"
+        // 4. Guaranteed High-Tier Drop: "Titan Virus" or "Meat Magnet"
         const rewardType = Math.random() < 0.5 ? 'titan_virus' : 'meat_magnet';
 
-        // 4. Fire event callback
+        // 5. Fire event callback
         if (this.onQuarantineOverrun) {
           this.onQuarantineOverrun(zone, rewardType, freedCount);
+        }
+
+        // 6. Roguelite Mutation Selection Modal (@designer)
+        if (this.onShowMutationModal) {
+          this.onShowMutationModal();
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // ADVANCED ENEMY SYSTEMS: ATTACK HELICOPTERS & ARMORED TANKS (@designer)
+  // =========================================================================
+
+  _createHelicopterMesh() {
+    const group = new THREE.Group();
+
+    // Fuselage: Slate military navy body
+    const bodyGeom = new THREE.BoxGeometry(1.8, 1.3, 3.2);
+    const bodyMat = new THREE.MeshToonMaterial({ color: 0x334155 });
+    const body = new THREE.Mesh(bodyGeom, bodyMat);
+    body.position.y = 0;
+    group.add(body);
+
+    // Dark Cockpit Visor
+    const glassGeom = new THREE.BoxGeometry(1.6, 0.7, 1.2);
+    const glassMat = new THREE.MeshToonMaterial({
+      color: 0x0284c7,
+      emissive: 0x0369a1,
+      emissiveIntensity: 0.4,
+    });
+    const glass = new THREE.Mesh(glassGeom, glassMat);
+    glass.position.set(0, 0.25, 1.1);
+    group.add(glass);
+
+    // Tail Boom
+    const tailGeom = new THREE.BoxGeometry(0.4, 0.4, 3.0);
+    const tailMat = new THREE.MeshToonMaterial({ color: 0x1e293b });
+    const tail = new THREE.Mesh(tailGeom, tailMat);
+    tail.position.set(0, 0.3, -2.4);
+    group.add(tail);
+
+    // Main Rotor Blades (spinning)
+    const rotorGeom = new THREE.BoxGeometry(6.4, 0.08, 0.35);
+    const rotorMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    const rotor = new THREE.Mesh(rotorGeom, rotorMat);
+    rotor.position.set(0, 0.85, 0);
+    group.add(rotor);
+
+    // Spotlight Cone (volumetric light beam down to ground Y = -18)
+    const coneGeom = new THREE.ConeGeometry(8.0, 18.0, 16, 1, true);
+    coneGeom.translate(0, -9.0, 0);
+    const coneMat = new THREE.MeshBasicMaterial({
+      color: 0xfef08a,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const cone = new THREE.Mesh(coneGeom, coneMat);
+    group.add(cone);
+
+    // Ground Target Reticle Ring at ground level
+    const ringGeom = new THREE.RingGeometry(7.0, 8.0, 24);
+    ringGeom.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xfacc15,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const groundRing = new THREE.Mesh(ringGeom, ringMat);
+    groundRing.position.y = -17.95; // Sits just above ground at Y=0.05 when heli is at Y=18
+    group.add(groundRing);
+
+    return { group, rotor, cone, coneMat, groundRing, ringMat };
+  }
+
+  spawnAttackHelicopter(x, z) {
+    if (x === undefined || z === undefined) {
+      const pz = this.patientZero;
+      const angle = Math.random() * Math.PI * 2;
+      x = (pz ? pz.x : 0) + Math.cos(angle) * 40;
+      z = (pz ? pz.z : 0) + Math.sin(angle) * 40;
+    }
+
+    const meshData = this._createHelicopterMesh();
+    meshData.group.position.set(x, 18.0, z);
+    if (this.scene) {
+      this.scene.add(meshData.group);
+    }
+
+    const heli = {
+      id: this._nextId++,
+      type: 'helicopter',
+      x,
+      z,
+      y: 18.0,
+      vx: 0,
+      vz: 0,
+      speed: 10.5,
+      lockOnTimer: 0,
+      meshData,
+    };
+    this.helicopters.push(heli);
+    return heli;
+  }
+
+  _updateHelicopters(dt, pz) {
+    if (!pz) return;
+
+    // Escalation check: Helicopters active when panicLevel >= 0.60
+    if (this.panicLevel >= 0.60) {
+      const desiredCount = this.panicLevel >= 0.85 ? 2 : 1;
+      if (this.helicopters.length < desiredCount) {
+        this.spawnAttackHelicopter();
+      }
+    } else {
+      // Clean up helicopters if panic was reduced below 60%
+      for (let i = this.helicopters.length - 1; i >= 0; i--) {
+        const h = this.helicopters[i];
+        if (this.scene && h.meshData) this.scene.remove(h.meshData.group);
+        this.helicopters.splice(i, 1);
+      }
+      return;
+    }
+
+    for (let i = this.helicopters.length - 1; i >= 0; i--) {
+      const h = this.helicopters[i];
+      if (h.meshData && h.meshData.rotor) {
+        h.meshData.rotor.rotation.y += dt * 32.0;
+      }
+
+      // Smooth flight tracking towards Patient Zero
+      const dx = pz.x - h.x;
+      const dz = pz.z - h.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 1.0) {
+        h.vx = (dx / dist) * h.speed;
+        h.vz = (dz / dist) * h.speed;
+        h.x += h.vx * dt;
+        h.z += h.vz * dt;
+      }
+
+      if (h.meshData && h.meshData.group) {
+        h.meshData.group.position.set(h.x, 18.0, h.z);
+      }
+
+      // Check if Patient Zero lingers in the tracking spotlight (radius 8m)
+      if (dist <= 8.0) {
+        h.lockOnTimer = (h.lockOnTimer || 0) + dt;
+        if (h.meshData && h.meshData.ringMat) {
+          h.meshData.ringMat.color.setHex(0xef4444);
+          h.meshData.coneMat.color.setHex(0xf87171);
+          h.meshData.ringMat.opacity = 0.5 + Math.sin(this.gameTime * 20.0) * 0.4;
+        }
+
+        if (h.lockOnTimer >= 2.0) {
+          this.triggerAirstrike(h.x, h.z);
+          h.lockOnTimer = -3.0; // 3.0s cooldown before next lock
+        }
+      } else {
+        h.lockOnTimer = Math.max(0, (h.lockOnTimer || 0) - dt * 1.5);
+        if (h.meshData && h.meshData.ringMat) {
+          h.meshData.ringMat.color.setHex(0xfacc15);
+          h.meshData.coneMat.color.setHex(0xfef08a);
+          h.meshData.ringMat.opacity = 0.65;
+        }
+      }
+    }
+  }
+
+  triggerAirstrike(x, z) {
+    if (this.particles) {
+      this.particles.burstExplosion(x, z);
+      this.particles.burstShockwave(x, z, 8.0);
+      if (this.particles.burstCure) this.particles.burstCure(x, z);
+      if (this.particles.burstDustCloud) this.particles.burstDustCloud(x, z, 16);
+    }
+    if (this.onCameraShake) this.onCameraShake(0.65, 0.7);
+    if (this.onExplosion) this.onExplosion(x, z);
+
+    // Impact on swarm followers within 6.0m
+    let decontaminatedCount = 0;
+    for (let zi = this.zombies.length - 1; zi >= 0; zi--) {
+      const z = this.zombies[zi];
+      const d = Math.hypot(z.x - x, z.z - z);
+      if (d <= 6.0 && decontaminatedCount < 3) {
+        this.decontaminateFollowerZombie(z);
+        decontaminatedCount++;
+      } else if (d <= 6.0) {
+        // Knockback
+        z.vx += ((z.x - x) / (d || 1)) * 12.0;
+        z.vz += ((z.z - z) / (d || 1)) * 12.0;
+      }
+    }
+
+    // Impact on Patient Zero
+    if (this.patientZero) {
+      const pzDist = Math.hypot(this.patientZero.x - x, this.patientZero.z - z);
+      if (pzDist <= 6.0 && !this.isSprayInvulnerable) {
+        if (this.zombies.length === 0) {
+          this.pzSprayTime = (this.pzSprayTime || 0) + 1.8;
+          if (this.pzSprayTime >= 3.5 && this.onGameOver) {
+            this.onGameOver('AIRSTRIKE_ELIMINATED');
+          }
+        }
+      }
+    }
+
+    if (this.onPanicEscalation) {
+      this.onPanicEscalation('⚠️ AIRSTRIKE DETONATED! GAS BOMB SCATTERS HORDE!');
+    }
+  }
+
+  _createTankMesh() {
+    const group = new THREE.Group();
+
+    // Hull: Camo slate grey
+    const hullGeom = new THREE.BoxGeometry(3.0, 1.1, 4.4);
+    const hullMat = new THREE.MeshToonMaterial({ color: 0x475569 });
+    const hull = new THREE.Mesh(hullGeom, hullMat);
+    hull.position.y = 0.55;
+    group.add(hull);
+
+    // Dark rubber treads
+    const treadMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    for (const s of [-1.55, 1.55]) {
+      const treadGeom = new THREE.BoxGeometry(0.5, 0.9, 4.6);
+      const tread = new THREE.Mesh(treadGeom, treadMat);
+      tread.position.set(s, 0.45, 0);
+      group.add(tread);
+    }
+
+    // Rotatable Turret
+    const turretGeom = new THREE.BoxGeometry(2.0, 0.85, 2.4);
+    const turretMat = new THREE.MeshToonMaterial({ color: 0x334155 });
+    const turret = new THREE.Mesh(turretGeom, turretMat);
+    turret.position.set(0, 1.45, 0);
+
+    // Cannon Barrel
+    const barrelGeom = new THREE.CylinderGeometry(0.18, 0.22, 2.6, 8);
+    barrelGeom.rotateX(Math.PI / 2);
+    barrelGeom.translate(0, 0, 1.7);
+    const barrelMat = new THREE.MeshToonMaterial({ color: 0x1e293b });
+    const barrel = new THREE.Mesh(barrelGeom, barrelMat);
+    turret.add(barrel);
+
+    group.add(turret);
+
+    return { group, turret, barrel };
+  }
+
+  spawnTank(x, z) {
+    if (x === undefined || z === undefined) {
+      const pos = this._getRandomStreetPosition(30, 55);
+      x = pos.x;
+      z = pos.z;
+    }
+
+    const meshData = this._createTankMesh();
+    meshData.group.position.set(x, 0, z);
+    if (this.scene) {
+      this.scene.add(meshData.group);
+    }
+
+    const tank = {
+      id: this._nextId++,
+      type: 'tank',
+      x,
+      z,
+      vx: 0,
+      vz: 0,
+      angle: 0,
+      speed: 2.2,
+      radius: 1.8,
+      fireCooldown: 4.5,
+      meshData,
+    };
+    this.tanks.push(tank);
+    return tank;
+  }
+
+  _updateTanks(dt, pz, spatialGrid) {
+    if (!pz) return;
+
+    // Escalation check: Tanks deploy when panicLevel >= 0.85
+    if (this.panicLevel >= 0.85) {
+      if (this.tanks.length < 1) {
+        this.spawnTank();
+      }
+    } else {
+      // Clean up if panic was reduced below 85%
+      for (let i = this.tanks.length - 1; i >= 0; i--) {
+        const t = this.tanks[i];
+        if (this.scene && t.meshData) this.scene.remove(t.meshData.group);
+        this.tanks.splice(i, 1);
+      }
+      return;
+    }
+
+    for (let i = this.tanks.length - 1; i >= 0; i--) {
+      const t = this.tanks[i];
+      const dx = pz.x - t.x;
+      const dz = pz.z - t.z;
+      const dist = Math.hypot(dx, dz);
+
+      // Aim turret towards Patient Zero
+      if (t.meshData && t.meshData.turret) {
+        const targetAngle = Math.atan2(dx, dz);
+        t.meshData.turret.rotation.y = targetAngle - t.angle;
+      }
+
+      // Destruction Condition 1: Titan Mode ramming collision
+      // Destruction Condition 2: 40+ Zombie Phalanx Push
+      const isTitanRam = (this.isTitan && dist <= 3.2);
+      const isPhalanxOverwhelm = (this.isPhalanx && this.zombies.length >= 40 && dist <= 3.5);
+
+      if (isTitanRam || isPhalanxOverwhelm) {
+        this.destroyTank(i, isTitanRam ? 'TITAN RAM!' : '40+ PHALANX OVERRUN!');
+        continue;
+      }
+
+      // Move slowly towards horde
+      if (dist > 8.0) {
+        t.angle = Math.atan2(dx, dz);
+        t.vx = (dx / dist) * t.speed;
+        t.vz = (dz / dist) * t.speed;
+        t.x += t.vx * dt;
+        t.z += t.vz * dt;
+      } else {
+        t.vx = 0;
+        t.vz = 0;
+      }
+
+      if (spatialGrid) {
+        spatialGrid.resolveObstacles(t, t.radius);
+      }
+
+      if (t.meshData && t.meshData.group) {
+        t.meshData.group.position.set(t.x, 0, t.z);
+        t.meshData.group.rotation.y = t.angle;
+      }
+
+      // Tank Shell Firing
+      t.fireCooldown -= dt;
+      if (t.fireCooldown <= 0 && dist <= 35.0) {
+        t.fireCooldown = 4.5;
+        this.fireTankShell(t, pz.x, pz.z);
+      }
+    }
+  }
+
+  destroyTank(tankIndex, reason = 'DEMOLISHED!') {
+    const t = this.tanks[tankIndex];
+    if (!t) return;
+
+    if (this.scene && t.meshData) {
+      this.scene.remove(t.meshData.group);
+    }
+    this.tanks.splice(tankIndex, 1);
+
+    if (this.particles) {
+      this.particles.burstExplosion(t.x, t.z);
+      this.particles.burstShockwave(t.x, t.z, 7.0);
+    }
+    if (this.onCameraShake) this.onCameraShake(0.6, 0.8);
+    if (this.onExplosion) this.onExplosion(t.x, t.z);
+
+    this.score += 500;
+    if (this.onPanicEscalation) {
+      this.onPanicEscalation(`💥 TANK DESTROYED: ${reason} +500 PTS!`);
+    }
+  }
+
+  fireTankShell(tank, targetX, targetZ) {
+    if (this.particles && this.particles.burstSparks) {
+      this.particles.burstSparks(tank.x, tank.z, 15);
+    }
+
+    // Impact explosion at target
+    if (this.particles) {
+      this.particles.burstExplosion(targetX, targetZ);
+      this.particles.burstShockwave(targetX, targetZ, 6.0);
+    }
+    if (this.onCameraShake) this.onCameraShake(0.5, 0.5);
+
+    // If player is in Phalanx formation, the dense meat-shield absorbs the blast!
+    if (this.isPhalanx && this.zombies.length > 0) {
+      let decontam = 0;
+      for (let zi = this.zombies.length - 1; zi >= 0; zi--) {
+        const z = this.zombies[zi];
+        if (Math.hypot(z.x - targetX, z.z - targetZ) <= 4.5 && decontam < 2) {
+          this.decontaminateFollowerZombie(z);
+          decontam++;
+        }
+      }
+      if (this.onPanicEscalation) {
+        this.onPanicEscalation('🛡️ PHALANX MEAT-SHIELD BLOCKED TANK SHELL!');
+      }
+    } else {
+      // Scatter horde members outward with force
+      for (let zi = 0; zi < this.zombies.length; zi++) {
+        const z = this.zombies[zi];
+        const d = Math.hypot(z.x - targetX, z.z - targetZ);
+        if (d <= 5.5) {
+          const force = (1.0 - d / 5.5) * 14.0;
+          z.vx += ((z.x - targetX) / (d || 1)) * force;
+          z.vz += ((z.z - targetZ) / (d || 1)) * force;
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // SYSTEMIC ENVIRONMENTAL HAZARDS: ACID & WATER PUDDLES (@designer)
+  // =========================================================================
+
+  spawnAcidPuddle(x, z) {
+    const geom = new THREE.CircleGeometry(2.5, 18);
+    geom.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x84cc16,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(x, 0.04, z);
+    if (this.scene) this.scene.add(mesh);
+
+    this.acidPuddles.push({
+      x,
+      z,
+      radius: 2.5,
+      life: 6.0,
+      mesh,
+    });
+    if (this.particles && this.particles.burstAcidBubbles) {
+      this.particles.burstAcidBubbles(x, z, 8);
+    }
+  }
+
+  spawnWaterPuddle(x, z, isToxic = false) {
+    const geom = new THREE.CircleGeometry(3.5, 20);
+    geom.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: isToxic ? 0x22c55e : 0x38bdf8,
+      transparent: true,
+      opacity: 0.65,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(x, 0.03, z);
+    if (this.scene) this.scene.add(mesh);
+
+    this.waterPuddles.push({
+      x,
+      z,
+      radius: 3.5,
+      life: 20.0,
+      isToxic,
+      isElectrified: false,
+      electrifiedTimer: 0,
+      mesh,
+      mat,
+    });
+  }
+
+  electrifyWaterPuddleNear(x, z, radius = 6.0) {
+    let electrifiedAny = false;
+    for (const wp of this.waterPuddles) {
+      const d = Math.hypot(wp.x - x, wp.z - z);
+      if (d <= radius + wp.radius) {
+        wp.isElectrified = true;
+        wp.electrifiedTimer = 8.0;
+        wp.mat.color.setHex(0x93c5fd);
+        electrifiedAny = true;
+      }
+    }
+    if (electrifiedAny && this.particles && this.particles.burstSparks) {
+      this.particles.burstSparks(x, z, 25);
+    }
+  }
+
+  poisonWaterPuddleNear(x, z, radius = 4.0) {
+    for (const wp of this.waterPuddles) {
+      const d = Math.hypot(wp.x - x, wp.z - z);
+      if (d <= radius + wp.radius) {
+        wp.isToxic = true;
+        wp.mat.color.setHex(0x22c55e);
+      }
+    }
+  }
+
+  _updatePuddles(dt) {
+    // 1. Acid Puddles (Stuns Hazmats and Military for 3s)
+    for (let i = this.acidPuddles.length - 1; i >= 0; i--) {
+      const ap = this.acidPuddles[i];
+      ap.life -= dt;
+      if (ap.life <= 0) {
+        if (this.scene && ap.mesh) this.scene.remove(ap.mesh);
+        this.acidPuddles.splice(i, 1);
+        continue;
+      }
+
+      // Check Hazmats
+      for (const h of this.hazmats) {
+        if (Math.hypot(h.x - ap.x, h.z - ap.z) <= ap.radius) {
+          h.stunTimer = 3.0;
+          if (this.particles && this.particles.burstAcidBubbles && Math.random() < 0.15) {
+            this.particles.burstAcidBubbles(h.x, h.z, 2);
+          }
+        }
+      }
+      // Check Military
+      for (const m of this.militaryUnits) {
+        if (Math.hypot(m.x - ap.x, m.z - ap.z) <= ap.radius) {
+          m.stunTimer = 3.0;
+          if (this.particles && this.particles.burstAcidBubbles && Math.random() < 0.15) {
+            this.particles.burstAcidBubbles(m.x, m.z, 2);
+          }
+        }
+      }
+    }
+
+    // 2. Water Puddles (Electrified stuns Hazmat/Military, Toxic converts civilians)
+    for (let i = this.waterPuddles.length - 1; i >= 0; i--) {
+      const wp = this.waterPuddles[i];
+      wp.life -= dt;
+      if (wp.life <= 0) {
+        if (this.scene && wp.mesh) this.scene.remove(wp.mesh);
+        this.waterPuddles.splice(i, 1);
+        continue;
+      }
+
+      if (wp.isElectrified) {
+        wp.electrifiedTimer -= dt;
+        if (wp.electrifiedTimer <= 0) {
+          wp.isElectrified = false;
+          wp.mat.color.setHex(wp.isToxic ? 0x22c55e : 0x38bdf8);
+        } else {
+          // Stun Hazmats & Military
+          for (const h of this.hazmats) {
+            if (Math.hypot(h.x - wp.x, h.z - wp.z) <= wp.radius) {
+              h.stunTimer = 3.0;
+            }
+          }
+          for (const m of this.militaryUnits) {
+            if (Math.hypot(m.x - wp.x, m.z - wp.z) <= wp.radius) {
+              m.stunTimer = 3.0;
+            }
+          }
+        }
+      }
+
+      if (wp.isToxic) {
+        // Converts healthy civilians who step into the puddle
+        for (let ci = this.civilians.length - 1; ci >= 0; ci--) {
+          const c = this.civilians[ci];
+          if (c.hidden || c.isCaptive) continue;
+          if (Math.hypot(c.x - wp.x, c.z - wp.z) <= wp.radius) {
+            this.convertCivilianToZombie(ci);
+          }
         }
       }
     }

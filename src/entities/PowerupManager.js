@@ -4,7 +4,8 @@ const POWERUP_TYPES = [
   { id: 'speed_surge', label: '⚡ SPEED SURGE!', symbol: '⚡', color: 0x00ffcc },
   { id: 'meat_magnet', label: '🧲 MEAT MAGNET!', symbol: '🧲', color: 0xff0055 },
   { id: 'bloater_bomb', label: '💥 BLOATER BOMB!', symbol: '💥', color: 0xffaa00 },
-  { id: 'titan_virus', label: '☣️ TITAN VIRUS!', symbol: '☣️', color: 0xa855f7 }
+  { id: 'titan_virus', label: '☣️ TITAN VIRUS!', symbol: '☣️', color: 0xa855f7 },
+  { id: 'media_blackout', label: '📡 MEDIA BLACKOUT!', symbol: '📡', color: 0x38bdf8 }
 ];
 
 function createBadgeTexture(symbol, hexColor) {

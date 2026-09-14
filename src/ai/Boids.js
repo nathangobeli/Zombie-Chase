@@ -35,8 +35,8 @@ export class BoidController {
     const boidX = boid.x;
     const boidZ = boid.z;
     
-    // Shield Wall: increase separation slightly to form a solid perimeter, Spearhead: reduce separation
-    const effectiveSepRadius = isSqueeze ? this.separationRadius * 0.35 : (isShieldWall ? this.separationRadius * 1.2 : this.separationRadius);
+    // Shield Wall: dense protective shell wrapping Patient Zero, Spearhead: reduced separation
+    const effectiveSepRadius = isSqueeze ? this.separationRadius * 0.35 : (isShieldWall ? this.separationRadius * 0.45 : this.separationRadius);
     const sepDistSq = effectiveSepRadius * effectiveSepRadius;
 
     // Query spatial grid for flockmates
@@ -121,11 +121,16 @@ export class BoidController {
         let anchorWeight = this.weightAnchor * (isFrenzy ? 1.8 : 1.0);
         if (isSqueeze) anchorWeight *= 2.0;
         if (isShieldWall) {
-          // If in shield wall and too far, pull in extremely hard
-          anchorWeight *= (anchorDist > 3.0 ? 3.5 : 1.2);
+          // Invert boid forces into a dense protective meat-shield ring wrapped directly around Patient Zero
+          const targetRingRadius = 2.2;
+          const radialDelta = anchorDist - targetRingRadius;
+          const radialForce = Math.min(10.0, Math.max(-6.0, radialDelta * 4.5));
+          steerX += (toAnchorX / (anchorDist || 1)) * radialForce;
+          steerZ += (toAnchorZ / (anchorDist || 1)) * radialForce;
+        } else {
+          steerX += (toAnchorX / anchorDist) * anchorWeight;
+          steerZ += (toAnchorZ / anchorDist) * anchorWeight;
         }
-        steerX += (toAnchorX / anchorDist) * anchorWeight;
-        steerZ += (toAnchorZ / anchorDist) * anchorWeight;
       }
 
       // Aerodynamic Arrow Pinch: compress boids laterally toward the leader's line of velocity

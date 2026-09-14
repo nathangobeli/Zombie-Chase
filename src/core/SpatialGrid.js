@@ -15,6 +15,7 @@ export class SpatialGrid {
     this.obstacles = [];
     this.chunkObstacles = new Map();
     this.onCarDemolished = null; // (obstacle, hitDirX, hitDirZ)
+    this.onStorefrontBreached = null; // (obstacle, hitDirX, hitDirZ)
   }
 
   setObstacles(obstacles) {
@@ -198,6 +199,20 @@ export class SpatialGrid {
             this.onCarDemolished(b, entity.vx || (currentX - b.centerX), entity.vz || (currentZ - b.centerZ));
           }
           continue;
+        }
+
+        // Storefront glass facade breached by Titan or 20+ horde members (@designer)
+        if (b.isStorefront && !b.breached) {
+          const isTitan = !!entity.isTitan;
+          const hordeCount = entity.hordeCount || 0;
+          if (isTitan || hordeCount >= 20) {
+            b.breached = true;
+            b.disabled = true;
+            if (this.onStorefrontBreached) {
+              this.onStorefrontBreached(b, entity.vx || (currentX - b.centerX), entity.vz || (currentZ - b.centerZ));
+            }
+            continue;
+          }
         }
 
         // Clamped closest point on AABB
