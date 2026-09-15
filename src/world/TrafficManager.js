@@ -451,7 +451,7 @@ export class TrafficManager {
             const distToRiot = Math.hypot(z.x - v.x, z.z - v.z);
             if (distToRiot <= v.riotMistRadius) {
               z.riotMistExposure = (z.riotMistExposure || 0) + dt;
-              const cureWindow = (entityManager.mutations && entityManager.mutations.bruteBone) ? (0.4 * 1.4) : 0.4;
+              const cureWindow = ((entityManager.mutations && entityManager.mutations.bruteBone) ? (0.4 * 1.4) : 0.4) * (entityManager.enhancementFollowerCureMult || 1.0);
               if (z.riotMistExposure >= cureWindow) {
                 entityManager.decontaminateFollowerZombie(z);
               }

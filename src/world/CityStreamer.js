@@ -20,6 +20,7 @@ export class CityStreamer {
     // Callbacks for dynamic chunk events (e.g. quarantine garrison spawning)
     this.onChunkLoaded = null;
     this.onChunkUnloaded = null;
+    this.entityManager = null;
 
     // Discrete 3-step cel-shading gradient map
     this.celGradientMap = createCelGradientMap();
@@ -128,6 +129,7 @@ export class CityStreamer {
     const chunk = new CityChunk(cx, cz, this.sharedMaterials, {
       buildingModels: this.buildingModels,
       colormapTexture: this.colormapTexture,
+      entityManager: this.entityManager,
     });
 
     // Add chunk meshes to Three.js scene
@@ -310,6 +312,9 @@ export class CityStreamer {
     for (const chunk of this.activeChunks.values()) {
       if (chunk.isQuarantineZone && chunk.updateQuarantineVisuals) {
         chunk.updateQuarantineVisuals(time, dt);
+      }
+      if (chunk.isSafeZone && chunk.updateSafeZoneVisuals) {
+        chunk.updateSafeZoneVisuals(time, dt);
       }
     }
   }

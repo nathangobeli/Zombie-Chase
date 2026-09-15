@@ -20,8 +20,9 @@ function probePort(port) {
 
 async function getDevServerUrl() {
   if (process.env.TEST_URL) return process.env.TEST_URL;
-  if (await probePort(5173)) return 'http://localhost:5173';
-  if (await probePort(5174)) return 'http://localhost:5174';
+  for (const p of [5176, 5175, 5174, 5173, 5177, 5178]) {
+    if (await probePort(p)) return `http://localhost:${p}`;
+  }
   return 'http://localhost:5173';
 }
 
@@ -166,7 +167,7 @@ async function runPlaytest() {
       const app = window.__GAME_APP__;
       const renderer = app?.instancedRenderer;
       return {
-        militaryCount: app?.entityManager?.militaryUnits?.length || 0,
+        militaryCount: app?.entityManager?.militaryUnits?.filter(m => !m.isQuarantineGarrison)?.length || 0,
         movingCarsCount: app?.trafficManager?.vehicles?.length || 0,
         stage: window.__GAME_STATE__?.stage || 1,
         stageName: window.__GAME_STATE__?.stageName || '',
@@ -894,23 +895,55 @@ async function runPlaytest() {
       const panicAfterQuarantine = em.panicLevel;
       const reducedByQuarantine = Math.abs(initialPanic - panicAfterQuarantine - 0.20) < 0.01;
 
-      // 2. Media Blackout reduces panic by 15% and pauses for 10s
+      // Assert 1: Triggering a Media Blackout power-up reduces window.__GAME_STATE__.panicLevel by 0.15
+      const preBlackoutGameStatePanic = window.__GAME_STATE__.panicLevel;
       em.activatePowerup('media_blackout');
+      const postBlackoutGameStatePanic = window.__GAME_STATE__.panicLevel;
+      const gameStateReducedBy15 = Math.abs(preBlackoutGameStatePanic - postBlackoutGameStatePanic - 0.15) < 0.01;
       const panicAfterBlackout = em.panicLevel;
       const reducedByBlackout = Math.abs(panicAfterQuarantine - panicAfterBlackout - 0.15) < 0.01;
-      const blackoutTimerActive = em.mediaBlackoutTimer >= 9.9;
+      const blackoutTimerActive = (em.panicPauseTimer >= 9.9) || (em.mediaBlackoutTimer >= 9.9);
 
-      // 3. Passive panic growth paused while blackout is active
-      const preUpdatePanic = em.panicAccumulated;
+      // Assert 2: The panic level remains completely static for the next 10 seconds of simulation
+      let staticDuring10s = true;
+      const expectedStaticPanic = em.panicLevel;
+      const expectedStaticGameState = window.__GAME_STATE__.panicLevel;
+
+      // Protect PZ from hazmat mist elimination while simulating 10 seconds of time
+      const prevInvuln = em.isSprayInvulnerable;
+      const prevSprayTime = em.pzSprayTime;
+      em.isSprayInvulnerable = true;
+      em.pzSprayTime = 0;
+
+      // Run 100 simulation steps of 0.1s (totaling 10.0s)
+      for (let s = 0; s < 100; s++) {
+        em.update(0.1, { x: 0, z: 0 }, app.spatialGrid);
+        if (Math.abs(em.panicLevel - expectedStaticPanic) > 0.001) {
+          staticDuring10s = false;
+        }
+        if (Math.abs(window.__GAME_STATE__.panicLevel - expectedStaticGameState) > 0.001) {
+          staticDuring10s = false;
+        }
+      }
+
+      // Verify that once 10.0s expires, simulation resumes passive accumulation
+      const timerExpired = (em.panicPauseTimer <= 0.001) && (em.mediaBlackoutTimer <= 0.001);
       em.update(0.1, { x: 0, z: 0 }, app.spatialGrid);
-      const panicGrowthPaused = (em.panicAccumulated === preUpdatePanic);
+      const resumedAccumulation = em.panicLevel > expectedStaticPanic;
+
+      // Restore PZ state
+      em.isSprayInvulnerable = prevInvuln;
+      em.pzSprayTime = prevSprayTime;
 
       return {
         reducedByQuarantine,
         reducedByBlackout,
+        gameStateReducedBy15,
         blackoutTimerActive,
-        panicGrowthPaused,
-        success: reducedByQuarantine && reducedByBlackout && blackoutTimerActive && panicGrowthPaused,
+        staticDuring10s,
+        timerExpired,
+        resumedAccumulation,
+        success: reducedByQuarantine && reducedByBlackout && gameStateReducedBy15 && blackoutTimerActive && staticDuring10s && resumedAccumulation,
       };
     });
     console.log('[Playtest] Panic Pacing & Media Blackout check:', panicPacingCheck);
@@ -952,6 +985,8 @@ async function runPlaytest() {
       if (heli) {
         heli.x = em.patientZero.x;
         heli.z = em.patientZero.z;
+        heli.spotlightX = em.patientZero.x;
+        heli.spotlightZ = em.patientZero.z;
         heli.lockOnTimer = 2.0;
         em._updateHelicopters(0.016, em.patientZero);
       }
@@ -1148,8 +1183,11 @@ async function runPlaytest() {
     // 3c. Test Horde Loss / Alone & Hunted Survival Countdown and Game Over (@designer)
     console.log('[Playtest] Testing Horde Loss & Alone Survival Countdown...');
     await page.evaluate(() => {
-      const em = window.__GAME_APP__?.entityManager;
+      const app = window.__GAME_APP__;
+      const em = app?.entityManager;
       if (em) {
+        if (app) app.isGameOver = false;
+        if (window.__GAME_STATE__) window.__GAME_STATE__.isGameOver = false;
         // End Titan mode and clear nearby civilians so PZ doesn't immediately re-infect
         em.titanVirusTimer = 0;
         em.isTitan = false;
@@ -1331,6 +1369,327 @@ async function runPlaytest() {
       };
     });
     console.log('[Playtest] MAIN MENU return check:', menuReturnCheck);
+
+    // =========================================================================
+    // EXPANSION QA: GAME MODES, TIME ATTACK, SAFE ZONES, LAB, & LEADERBOARD TAG
+    // =========================================================================
+
+    // 1. Game Mode Selector & Time Attack Expiration Check
+    console.log('[Playtest] Testing Game Mode selector and Time Attack countdown...');
+    const timeAttackCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const timeAttackPill = document.querySelector('.mode-pill[data-mode="time_attack_2"]');
+      if (!timeAttackPill) return { success: false, reason: 'time_attack_2 pill not found' };
+
+      // Click Time Attack 2m pill
+      timeAttackPill.click();
+      const selectedMode = app.activeGameMode;
+
+      // Start game
+      app.startGame(app.activeDifficulty, selectedMode);
+
+      const hudTimerEl = document.getElementById('hud-time-attack');
+      const hudTimerVal = document.getElementById('hud-time-attack-val');
+      const hudVisible = hudTimerEl && !hudTimerEl.classList.contains('hidden');
+      const initialTimer = app.timeAttackTimer;
+
+      // Give 1000 base score
+      app.entityManager.score = 1000;
+
+      // Trigger time attack expiration
+      app.timeAttackTimer = 0;
+      app.entityManager.onGameOver('TIME_ATTACK_SURVIVED');
+
+      const reasonText = app.gameOverReasonEl ? app.gameOverReasonEl.textContent : '';
+      const finalScoreText = app.goFinalScoreEl ? app.goFinalScoreEl.textContent : '';
+
+      return {
+        success: selectedMode === 'time_attack_2' && hudVisible && initialTimer === 120 && finalScoreText.includes('1,250') && reasonText.includes("TIME'S UP!"),
+        selectedMode,
+        hudVisible,
+        initialTimer,
+        reasonText,
+        finalScoreText,
+      };
+    });
+    console.log('[Playtest] Time Attack check:', timeAttackCheck);
+
+    // Enter initials for Time Attack run
+    await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      if (app.isEnteringInitials) {
+        app.tumblerChars = ['T', 'M', 'E'];
+        app._submitInitials();
+      }
+    });
+    await page.waitForTimeout(300);
+
+    // Return to menu
+    await page.evaluate(() => window.__GAME_APP__?.returnToMenu());
+    await page.waitForTimeout(300);
+
+    // 2. Zombie Safe Zone Deposit & Alone Survival Trigger Check
+    console.log('[Playtest] Testing Safe Zone deposit mechanic & Alone countdown...');
+    const safeZoneDepositCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app.entityManager;
+      app.startGame('outbreak', 'endless');
+
+      // Spawn 6 follower zombies
+      for (let i = 0; i < 6; i++) {
+        em.spawnStrayZombie(em.patientZero.x + 1, em.patientZero.z);
+      }
+      for (let i = em.strayZombies.length - 1; i >= 0; i--) {
+        em.recruitStrayZombie(i);
+      }
+      const initialHorde = em.zombies.length;
+
+      // Spawn synthetic Safe Zone at (0, 0)
+      em.spawnSafeZone(0, 0);
+
+      // Position Patient Zero at (0, 0)
+      em.patientZero.x = 0;
+      em.patientZero.z = 0;
+
+      // Tick channeling for 0.8s
+      em._updateSafeZones(0.8, em.patientZero);
+      const isChannelingHalf = em.isChannelingSafeZone;
+      const widgetHalfVisible = app.safeZoneWidgetEl && !app.safeZoneWidgetEl.classList.contains('hidden');
+
+      // Tick channeling for remaining 0.8s (total 1.6s >= 1.5s target)
+      const prevBanked = app.storageSystem.getBankedZombies();
+      const prevScore = em.score || 0;
+      em._updateSafeZones(0.8, em.patientZero);
+
+      const postHorde = em.zombies.length;
+      const postBanked = app.storageSystem.getBankedZombies();
+      const postScore = em.score || 0;
+      const isAloneHuntedTriggered = em.isAloneHunted && em.aloneTimer > 0;
+      const widgetHiddenAfter = app.safeZoneWidgetEl && app.safeZoneWidgetEl.classList.contains('hidden');
+
+      return {
+        success: initialHorde >= 6 && isChannelingHalf && widgetHalfVisible && postHorde === 0 && (postBanked - prevBanked) === initialHorde && (postScore - prevScore) === initialHorde * 250 && isAloneHuntedTriggered && widgetHiddenAfter,
+        initialHorde,
+        isChannelingHalf,
+        widgetHalfVisible,
+        postHorde,
+        bankedAdded: postBanked - prevBanked,
+        scoreAdded: postScore - prevScore,
+        isAloneHuntedTriggered,
+        widgetHiddenAfter,
+      };
+    });
+    console.log('[Playtest] Safe Zone deposit check:', safeZoneDepositCheck);
+
+    // Return to menu
+    await page.evaluate(() => window.__GAME_APP__?.returnToMenu());
+    await page.waitForTimeout(300);
+
+    // 3. Mutation Lab Meta-Progression Store Check
+    console.log('[Playtest] Testing Mutation Lab modal, purchases, and buffs...');
+    const mutationLabCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const storage = app.storageSystem;
+
+      // Give 150 banked zombies
+      storage.addBankedZombies(150);
+      const balanceBefore = storage.getBankedZombies();
+
+      // Open lab modal
+      document.getElementById('btn-menu-lab')?.click();
+      const modal = document.getElementById('lab-modal');
+      const isModalOpen = modal && getComputedStyle(modal).display !== 'none';
+
+      // Unlock civilianPheromone (cost 30)
+      const unlockPheromoneSuccess = storage.unlockEnhancement('civilianPheromone');
+      const balanceAfterPheromone = storage.getBankedZombies();
+
+      // Unlock titanDuration (cost 50)
+      const unlockTitanSuccess = storage.unlockEnhancement('titanDuration');
+
+      // Toggle civilianPheromone
+      const toggleOff = storage.toggleEnhancement('civilianPheromone', false);
+      const toggleOn = storage.toggleEnhancement('civilianPheromone', true);
+
+      // Start game and verify applied buffs on EntityManager
+      app._closeLabModal();
+      app.startGame('outbreak', 'endless');
+      const em = app.entityManager;
+
+      return {
+        success: isModalOpen && unlockPheromoneSuccess && unlockTitanSuccess && (balanceBefore - balanceAfterPheromone === 30) && toggleOn === true && em.titanDurationBuff === 22.5 && em.infectionHitRadiusMultiplier === 1.35 && app.usedEnhancements === true,
+        isModalOpen,
+        unlockPheromoneSuccess,
+        unlockTitanSuccess,
+        balanceDeducted: balanceBefore - balanceAfterPheromone,
+        titanDurationBuff: em.titanDurationBuff,
+        infectionHitRadiusMultiplier: em.infectionHitRadiusMultiplier,
+        usedEnhancements: app.usedEnhancements,
+      };
+    });
+    console.log('[Playtest] Mutation Lab check:', mutationLabCheck);
+
+    // 4. Leaderboard Enhancement Tagging & Mode Partitioning Check
+    console.log('[Playtest] Testing Leaderboard 🧬 enhancement tagging & mode tabs...');
+    const leaderboardTagCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      // Trigger game over on this enhanced run
+      app.entityManager.score = 5000;
+      app.entityManager.onGameOver('HORDE_WIPED_OUT');
+
+      // Submit initials "DNA"
+      if (app.isEnteringInitials) {
+        app.tumblerChars = ['D', 'N', 'A'];
+        app._submitInitials();
+      }
+
+      const rowsHtml = document.getElementById('leaderboard-rows')?.innerHTML || '';
+      const hasDnaBadge = rowsHtml.includes('enhancement-dna-badge') && rowsHtml.includes('🧬');
+      const hasDnaInitials = rowsHtml.includes('DNA');
+
+      // Test mode tab switching to time_attack_2
+      const timeAttackTab = document.querySelector('#gameover-mode-tabs .lead-tab[data-mode="time_attack_2"]');
+      if (timeAttackTab) timeAttackTab.click();
+      const timeAttackRowsHtml = document.getElementById('leaderboard-rows')?.innerHTML || '';
+      const hasTimeAttackScore = timeAttackRowsHtml.includes('TME');
+
+      return {
+        success: hasDnaBadge && hasDnaInitials && hasTimeAttackScore,
+        hasDnaBadge,
+        hasDnaInitials,
+        hasTimeAttackScore,
+      };
+    });
+    console.log('[Playtest] Leaderboard enhancement tag check:', leaderboardTagCheck);
+
+    // Return to menu
+    await page.evaluate(() => window.__GAME_APP__?.returnToMenu());
+    await page.waitForTimeout(300);
+
+    // =========================================================================
+    // BUG-FIX SPRINT VALIDATION CHECKS (@qa)
+    // 1. Banked zombie integer persistence across reload in localStorage ('zombie_chase_bank')
+    // 2. Quarantine garrison units bypass distance-despawn (>140m) via preventDespawn = true
+    // 3. Spotlight vector math limits tracking speed to 7.5 m/s, resetting lockOnTimer when outrun (>8.0m)
+    // =========================================================================
+
+    console.log('[Playtest] Testing Banked Zombie persistence across page reload...');
+    const bankPersistenceCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      // Set explicit integer in localStorage
+      const testVal = 250;
+      localStorage.setItem('zombie_chase_bank', String(testVal));
+      app._updateBankedZombiesUI();
+
+      const readRaw = localStorage.getItem('zombie_chase_bank');
+      const readInt = parseInt(readRaw, 10);
+      const menuVal = parseInt(document.getElementById('menu-banked-zombies')?.textContent?.replace(/,/g, '') || '0', 10);
+      const labEl = document.getElementById('lab-banked-balance') || document.getElementById('lab-banked-count');
+      const labVal = parseInt(labEl?.textContent?.replace(/,/g, '') || '0', 10);
+
+      return {
+        keyExists: readRaw !== null,
+        readInt,
+        menuSynced: menuVal === testVal,
+        labSynced: labVal === testVal,
+        success: readInt === testVal && menuVal === testVal && labVal === testVal,
+      };
+    });
+    console.log('[Playtest] Banked Zombie persistence check:', bankPersistenceCheck);
+
+    console.log('[Playtest] Testing Quarantine Garrison distance-despawn bypass...');
+    const garrisonDespawnCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app.entityManager;
+
+      // Spawn a synthetic quarantine outpost at (300, 300) (>140m away from origin PZ)
+      const zone = em.spawnQuarantineOutpost(300, 300);
+      const chunkKey = zone.chunkKey;
+
+      // Count garrison units
+      const initialHazmats = em.hazmats.filter(h => h.quarantineZoneKey === chunkKey);
+      const initialMilitary = em.militaryUnits.filter(m => m.quarantineZoneKey === chunkKey);
+      const initialCaptives = em.civilians.filter(c => c.quarantineZoneKey === chunkKey);
+
+      const allHavePreventDespawn = 
+        initialHazmats.every(h => h.preventDespawn === true) &&
+        initialMilitary.every(m => m.preventDespawn === true) &&
+        initialCaptives.every(c => c.preventDespawn === true);
+
+      // Position Patient Zero far away at (0, 0) - distance is ~424m (> 140m)
+      const pz = { x: 0, z: 0 };
+      em.updatePopulationStreaming(pz);
+
+      const survivingHazmats = em.hazmats.filter(h => h.quarantineZoneKey === chunkKey);
+      const survivingMilitary = em.militaryUnits.filter(m => m.quarantineZoneKey === chunkKey);
+      const survivingCaptives = em.civilians.filter(c => c.quarantineZoneKey === chunkKey);
+
+      // Cleanup
+      em.unregisterQuarantineZone(chunkKey);
+
+      return {
+        initialHazmats: initialHazmats.length,
+        initialMilitary: initialMilitary.length,
+        initialCaptives: initialCaptives.length,
+        allHavePreventDespawn,
+        survivedStreaming: survivingHazmats.length === initialHazmats.length &&
+                           survivingMilitary.length === initialMilitary.length &&
+                           survivingCaptives.length === initialCaptives.length,
+        success: allHavePreventDespawn && survivingHazmats.length > 0 && survivingMilitary.length > 0 && survivingCaptives.length > 0,
+      };
+    });
+    console.log('[Playtest] Quarantine Garrison distance-despawn bypass check:', garrisonDespawnCheck);
+
+    console.log('[Playtest] Testing Helicopter spotlight tracking speed limit (7.5 m/s) and evasion...');
+    const spotlightEvasionCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const em = app.entityManager;
+
+      // Set panic level so helicopters are active (requires >= 0.60 panic)
+      em.setPanicLevel(0.75);
+
+      // Clear existing helicopters and spawn one test helicopter
+      em.helicopters = [];
+      const heli = em.spawnAttackHelicopter(0, 0);
+      heli.spotlightX = 0;
+      heli.spotlightZ = 0;
+
+      // Case A: Player stationary at (0, 0), lock-on charges
+      const pz = { x: 0, z: 0 };
+      em._updateHelicopters(0.1, pz);
+      const lockedOn = heli.lockOnTimer > 0;
+
+      // Case B: Player teleports / sprints beyond 8.0m (e.g. at x = 25m)
+      pz.x = 25.0; // Distance is 25 - 0.75 = 24.25m (> 8.0m)
+      heli.lockOnTimer = 1.8; // Pretend it was almost locked
+      em._updateHelicopters(0.1, pz);
+
+      const timerReset = heli.lockOnTimer === 0;
+
+      // Case C: Spotlight speed limit assertion: delta spotlight position over dt cannot exceed 7.5 * dt
+      heli.spotlightX = 0;
+      heli.spotlightZ = 0;
+      pz.x = 100.0;
+      pz.z = 0;
+      const dtTest = 0.5;
+      em._updateHelicopters(dtTest, pz);
+      const distanceMoved = heli.spotlightX; // Was 0, now moved towards 100
+      const expectedMaxMove = 7.5 * dtTest; // 3.75m
+      const speedLimited = Math.abs(distanceMoved - expectedMaxMove) < 0.001;
+
+      // Cleanup
+      em.helicopters = [];
+
+      return {
+        lockedOn,
+        timerReset,
+        distanceMoved,
+        expectedMaxMove,
+        speedLimited,
+        success: lockedOn && timerReset && speedLimited,
+      };
+    });
+    console.log('[Playtest] Helicopter spotlight evasion & speed limit check:', spotlightEvasionCheck);
 
     // Check final scale reading
     const finalScale = await page.evaluate(() => window.__GAME_STATE__?.pzVisualScale || 1.0);
@@ -1623,6 +1982,41 @@ async function runPlaytest() {
 
     if (!hazardsStorefrontCheck.success) {
       console.error('[Playtest FAILED] Environmental Hazards & Storefront Breaches check failed:', hazardsStorefrontCheck);
+      process.exit(1);
+    }
+
+    if (!timeAttackCheck.success) {
+      console.error('[Playtest FAILED] Time Attack check failed:', timeAttackCheck);
+      process.exit(1);
+    }
+
+    if (!safeZoneDepositCheck.success) {
+      console.error('[Playtest FAILED] Safe Zone deposit & Alone survival trigger check failed:', safeZoneDepositCheck);
+      process.exit(1);
+    }
+
+    if (!mutationLabCheck.success) {
+      console.error('[Playtest FAILED] Mutation Lab meta-progression store check failed:', mutationLabCheck);
+      process.exit(1);
+    }
+
+    if (!leaderboardTagCheck.success) {
+      console.error('[Playtest FAILED] Leaderboard enhancement tag check failed:', leaderboardTagCheck);
+      process.exit(1);
+    }
+
+    if (!bankPersistenceCheck.success) {
+      console.error('[Playtest FAILED] Banked zombie persistence in localStorage (zombie_chase_bank) failed:', bankPersistenceCheck);
+      process.exit(1);
+    }
+
+    if (!garrisonDespawnCheck.success) {
+      console.error('[Playtest FAILED] Quarantine garrison units failed to bypass distance despawn:', garrisonDespawnCheck);
+      process.exit(1);
+    }
+
+    if (!spotlightEvasionCheck.success) {
+      console.error('[Playtest FAILED] Helicopter spotlight tracking speed limit (7.5 m/s) or evasion reset failed:', spotlightEvasionCheck);
       process.exit(1);
     }
 

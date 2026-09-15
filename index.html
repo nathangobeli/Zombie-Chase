@@ -51,6 +51,18 @@
           <div class="score-value" id="score-val">0</div>
           <div class="combo-display" id="combo-display"></div>
         </div>
+
+        <!-- Time Attack Countdown Clock -->
+        <div id="hud-time-attack" class="hud-card time-attack-card hidden">
+          <div class="card-label">TIME REMAINING</div>
+          <div class="card-value-row">
+            <span id="time-attack-val" class="time-attack-val">02:00</span>
+            <span class="time-attack-icon">⏱️</span>
+          </div>
+          <div class="time-attack-progress-bar">
+            <div id="time-attack-bar-fill" class="time-attack-bar-fill"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Collapsible Developer / Debug Drawer (Hidden during standard runs) -->
@@ -146,6 +158,19 @@
         <div id="alone-countdown-text" class="alone-countdown-text">7.0s</div>
       </div>
 
+      <!-- Zombie Safe Zone Deposit Channeling Widget (@designer & @artist) -->
+      <div id="safezone-channel-widget" class="safezone-channel-widget hidden" style="display: none !important;">
+        <div class="safezone-header">
+          <span class="safezone-badge">🏦 REFUGE</span>
+          <span class="safezone-title">DEPOSITING SWARM...</span>
+        </div>
+        <div class="safezone-desc">HOLD POSITION TO SECURE FOLLOWERS INTO THE VAULT</div>
+        <div class="safezone-bar-wrapper">
+          <div id="safezone-bar-fill" class="safezone-bar-fill"></div>
+        </div>
+        <div id="safezone-countdown-text" class="safezone-countdown-text">1.5s</div>
+      </div>
+
       <!-- Last Stand Hazmat Decontamination Circular Countdown Widget (@designer & @artist) -->
       <div id="mist-countdown-widget" class="mist-countdown-widget hidden">
         <svg class="mist-ring-svg" viewBox="0 0 64 64">
@@ -194,9 +219,40 @@
     <div id="main-menu-overlay" class="menu-overlay">
       <div class="menu-card">
         <div class="hazard-stripes-bar"></div>
+        <div class="menu-slime-trim">
+          <svg viewBox="0 0 400 24" preserveAspectRatio="none" class="slime-drip-svg">
+            <path d="M0,0 L400,0 L400,6 C380,6 375,18 365,18 C355,18 350,6 330,6 C310,6 305,22 295,22 C285,22 280,6 250,6 C235,6 230,16 220,16 C210,16 205,6 180,6 C160,6 155,24 140,24 C125,24 120,6 95,6 C80,6 75,16 65,16 C55,16 50,6 25,6 C10,6 5,14 0,14 Z" fill="url(#slime-grad)"/>
+            <defs>
+              <linearGradient id="slime-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#15803d"/>
+                <stop offset="50%" stop-color="#4ade80"/>
+                <stop offset="100%" stop-color="#22c55e"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
         <div class="menu-logo-badge">☣️ CONTAGION SIMULATOR</div>
         <h1 class="menu-title">ZOMBIE CHASE</h1>
         <p class="menu-subtitle">INFECT THE CITY • BUILD THE SWARM • OVERRUN THE QUARANTINE</p>
+
+        <!-- Game Mode Selection -->
+        <div class="menu-mode-section">
+          <div class="mode-label">SELECT GAME MODE:</div>
+          <div class="mode-pills">
+            <button class="mode-pill active" data-mode="endless">
+              <span class="mode-name">ENDLESS</span>
+            </button>
+            <button class="mode-pill" data-mode="time_attack_2">
+              <span class="mode-name">TIME ATTACK: 2 MIN</span>
+            </button>
+            <button class="mode-pill" data-mode="time_attack_5">
+              <span class="mode-name">TIME ATTACK: 5 MIN</span>
+            </button>
+            <button class="mode-pill" data-mode="time_attack_10">
+              <span class="mode-name">TIME ATTACK: 10 MIN</span>
+            </button>
+          </div>
+        </div>
 
         <!-- Difficulty Selection -->
         <div class="menu-difficulty-section">
@@ -220,6 +276,7 @@
         <!-- Action CTAs -->
         <div class="menu-actions">
           <button id="btn-start-game" class="menu-btn menu-btn-start">START OUTBREAK ▶</button>
+          <button id="btn-menu-lab" class="menu-btn menu-btn-lab">🧪 MUTATION LAB (<span id="menu-banked-zombies">0</span> 🧟)</button>
           <button id="btn-menu-rules" class="menu-btn menu-btn-rules">📖 HOW TO PLAY / RULES</button>
           <button id="btn-menu-leaderboard" class="menu-btn menu-btn-scores">🏆 HIGH SCORES</button>
         </div>
@@ -350,6 +407,12 @@
             <span class="leaderboard-title">🏆 TOP 5 LEADERBOARD</span>
             <span id="leaderboard-diff-badge" class="diff-badge">OUTBREAK</span>
           </div>
+          <div class="leaderboard-mode-tabs" id="gameover-mode-tabs">
+            <button class="lead-tab active" data-mode="endless">ENDLESS</button>
+            <button class="lead-tab" data-mode="time_attack_2">2 MIN</button>
+            <button class="lead-tab" data-mode="time_attack_5">5 MIN</button>
+            <button class="lead-tab" data-mode="time_attack_10">10 MIN</button>
+          </div>
           <div class="leaderboard-table-wrapper">
             <table class="leaderboard-table">
               <thead>
@@ -381,12 +444,18 @@
       <div class="game-over-card">
         <div class="game-over-icon">🏆</div>
         <div class="game-over-title" style="color: #facc15;">HALL OF INFAMY</div>
-        <div class="game-over-desc">Top contagion records in Outbreak mode.</div>
+        <div class="game-over-desc">Top contagion records across game modes.</div>
         
         <div class="leaderboard-section">
           <div class="leaderboard-header">
             <span class="leaderboard-title">TOP 5 RECORD CARRIERS</span>
-            <span class="diff-badge">OUTBREAK</span>
+            <span id="standalone-diff-badge" class="diff-badge">OUTBREAK</span>
+          </div>
+          <div class="leaderboard-mode-tabs" id="standalone-mode-tabs">
+            <button class="lead-tab active" data-mode="endless">ENDLESS</button>
+            <button class="lead-tab" data-mode="time_attack_2">2 MIN</button>
+            <button class="lead-tab" data-mode="time_attack_5">5 MIN</button>
+            <button class="lead-tab" data-mode="time_attack_10">10 MIN</button>
           </div>
           <div class="leaderboard-table-wrapper">
             <table class="leaderboard-table">
@@ -408,6 +477,29 @@
         </div>
 
         <button id="btn-close-leaderboard" class="hud-btn" style="width: 100%; margin-top: 14px; background: rgba(56, 189, 248, 0.25); border-color: #38bdf8;">CLOSE ✕</button>
+      </div>
+    </div>
+
+    <!-- Mutation Lab Meta-Progression Modal -->
+    <div id="lab-modal" class="game-over-modal" style="display: none;">
+      <div class="lab-card">
+        <div class="hazard-stripes-bar"></div>
+        <div class="lab-header">
+          <div class="lab-badge">🧪 PERMANENT SPECIMEN RESEARCH</div>
+          <h2 class="lab-title">MUTATION LAB</h2>
+          <div class="lab-bank-counter">
+            VAULT BALANCE: <span id="lab-banked-count" class="bank-highlight">0</span> 🧟 BANKED
+          </div>
+          <p class="lab-subtitle">Spend banked zombies to unlock enhancements. Toggle them ON/OFF before your next run.</p>
+        </div>
+
+        <div class="lab-grid" id="lab-enhancements-grid">
+          <!-- Dynamically populated enhancement cards -->
+        </div>
+
+        <div class="lab-actions">
+          <button id="btn-close-lab" class="menu-btn menu-btn-start" style="width: 100%;">APPLY &amp; RETURN ▶</button>
+        </div>
       </div>
     </div>
 

@@ -1547,7 +1547,9 @@ html, body, #game-container, #canvas-container {
     #090d16 10px,
     #090d16 20px
   );
-  margin-bottom: 14px;
+  background-size: 28.28px 28.28px;
+  animation: hazard-scroll 1.4s linear infinite;
+  margin-bottom: 6px;
   border: 1px solid rgba(234, 179, 8, 0.4);
 }
 
@@ -1559,7 +1561,39 @@ html, body, #game-container, #canvas-container {
     #090d16 10px,
     #090d16 20px
   );
+  background-size: 28.28px 28.28px;
+  animation: hazard-scroll 1.4s linear infinite;
   border-color: rgba(220, 38, 38, 0.5);
+}
+
+@keyframes hazard-scroll {
+  0% { background-position: 0 0; }
+  100% { background-position: 28.28px 0; }
+}
+
+/* Dripping Toxic Slime Trim */
+.menu-slime-trim {
+  width: 100%;
+  height: 18px;
+  margin-top: -2px;
+  margin-bottom: 10px;
+  overflow: visible;
+  display: flex;
+  justify-content: center;
+}
+
+.slime-drip-svg {
+  width: 100%;
+  height: 18px;
+  filter: drop-shadow(0 3px 10px rgba(74, 222, 128, 0.75));
+  animation: slime-stretch 3.2s infinite ease-in-out alternate;
+  transform-origin: top center;
+}
+
+@keyframes slime-stretch {
+  0% { transform: scaleY(1.0); }
+  50% { transform: scaleY(1.25) translateY(1px); }
+  100% { transform: scaleY(1.08); }
 }
 
 /* ==========================================================================
@@ -1585,6 +1619,7 @@ html, body, #game-container, #canvas-container {
 }
 
 .menu-card {
+  position: relative;
   background: radial-gradient(circle at 50% 0%, #152238 0%, #0f172a 55%, #090d16 100%);
   border: 2.5px solid #22c55e;
   box-shadow: 0 0 50px rgba(34, 197, 94, 0.35), 0 25px 60px rgba(0, 0, 0, 0.95);
@@ -1600,7 +1635,19 @@ html, body, #game-container, #canvas-container {
   text-align: center;
   color: #fff;
   font-family: 'Outfit', sans-serif;
-  animation: card-pop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: card-pop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275), card-toxic-glow 3.5s infinite ease-in-out alternate;
+  z-index: 2;
+}
+
+@keyframes card-toxic-glow {
+  0% {
+    border-color: #22c55e;
+    box-shadow: 0 0 35px rgba(34, 197, 94, 0.30), 0 25px 60px rgba(0, 0, 0, 0.95);
+  }
+  100% {
+    border-color: #4ade80;
+    box-shadow: 0 0 60px rgba(74, 222, 128, 0.60), 0 25px 60px rgba(0, 0, 0, 0.95);
+  }
 }
 
 .menu-logo-badge {
@@ -1615,24 +1662,32 @@ html, body, #game-container, #canvas-container {
   padding: 4px 12px;
   border-radius: 20px;
   margin-bottom: 10px;
+  box-shadow: 0 0 15px rgba(74, 222, 128, 0.25);
+  animation: badge-pulse 2.2s infinite ease-in-out;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(74, 222, 128, 0.2); }
+  50% { transform: scale(1.04); box-shadow: 0 0 22px rgba(74, 222, 128, 0.5); }
 }
 
 .menu-title {
+  position: relative;
   font-size: 2.85rem;
   font-weight: 900;
   letter-spacing: 3px;
   margin: 0 0 8px;
   line-height: 1.05;
-  background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+  background: linear-gradient(135deg, #86efac 0%, #4ade80 30%, #22c55e 65%, #16a34a 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 25px rgba(34, 197, 94, 0.7));
+  filter: drop-shadow(0 0 25px rgba(34, 197, 94, 0.75));
   animation: pulse-logo 2.5s infinite ease-in-out;
 }
 
 @keyframes pulse-logo {
   0%, 100% { filter: drop-shadow(0 0 20px rgba(34, 197, 94, 0.5)); transform: scale(1); }
-  50% { filter: drop-shadow(0 0 35px rgba(74, 222, 128, 0.85)); transform: scale(1.02); }
+  50% { filter: drop-shadow(0 0 40px rgba(74, 222, 128, 0.95)); transform: scale(1.025); }
 }
 
 .menu-subtitle {
@@ -2165,6 +2220,430 @@ html, body, #game-container, #canvas-container {
   .mutation-modal-title {
     font-size: 1.7rem;
   }
+}
+
+/* =========================================================
+   GAME MODES SELECTOR & TIME ATTACK HUD
+   ========================================================= */
+.menu-mode-section {
+  margin-bottom: 12px;
+}
+
+.mode-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 1px;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.mode-pills {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.mode-pill {
+  flex: 1;
+  min-width: 65px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 8px 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: 'Outfit', sans-serif;
+  touch-action: manipulation;
+}
+
+.mode-pill:hover {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.1);
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.mode-pill.active {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  color: #fff;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
+  transform: translateY(-2px);
+}
+
+.mode-name {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.menu-btn-lab {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(34, 197, 94, 0.25));
+  border-color: #a855f7;
+  color: #e9d5ff;
+}
+
+.menu-btn-lab:hover {
+  border-color: #c084fc;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+  color: #fff;
+}
+
+/* Time Attack Card */
+.time-attack-card {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.time-attack-val {
+  font-size: 24px;
+  font-weight: 900;
+  color: #38bdf8;
+  font-family: var(--font-mono);
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+}
+
+.time-attack-val.critical {
+  color: #ef4444;
+  text-shadow: 0 0 14px rgba(239, 68, 68, 0.8);
+  animation: timerPulse 0.6s infinite alternate;
+}
+
+@keyframes timerPulse {
+  from { transform: scale(1.0); }
+  to { transform: scale(1.08); }
+}
+
+.time-attack-icon {
+  font-size: 14px;
+}
+
+.time-attack-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.time-attack-bar-fill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+  transition: width 0.1s linear;
+}
+
+/* =========================================================
+   SAFE ZONE DEPOSIT CHANNELING WIDGET
+   ========================================================= */
+.safezone-channel-widget {
+  display: none !important;
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.95);
+  border: 2px solid #22c55e;
+  border-radius: 16px;
+  padding: 12px 24px;
+  z-index: 85;
+  box-shadow: 0 0 25px rgba(34, 197, 94, 0.45);
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  min-width: 280px;
+  max-width: 90vw;
+  transition: opacity 0.2s ease;
+}
+
+.safezone-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.safezone-badge {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid #22c55e;
+  color: #4ade80;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+
+.safezone-title {
+  font-size: 0.95rem;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.safezone-desc {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-weight: 600;
+  text-align: center;
+}
+
+.safezone-bar-wrapper {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.safezone-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+  transition: width 0.05s linear;
+}
+
+.safezone-countdown-text {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #4ade80;
+}
+
+/* =========================================================
+   MUTATION LAB META-PROGRESSION MODAL
+   ========================================================= */
+.lab-card {
+  background: linear-gradient(160deg, #090e17 0%, #0f172a 100%);
+  border: 2px solid rgba(168, 85, 247, 0.5);
+  border-radius: 24px;
+  padding: 24px;
+  max-width: 680px;
+  width: 95%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 0 50px rgba(168, 85, 247, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+
+.lab-header {
+  text-align: center;
+}
+
+.lab-badge {
+  display: inline-block;
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.6);
+  color: #c084fc;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-bottom: 6px;
+}
+
+.lab-title {
+  font-size: 2rem;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 1px;
+  text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+}
+
+.lab-bank-counter {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 800;
+  color: #cbd5e1;
+  margin-top: 4px;
+}
+
+.bank-highlight {
+  color: #4ade80;
+  font-size: 1.25rem;
+  text-shadow: 0 0 12px rgba(74, 222, 128, 0.6);
+}
+
+.lab-subtitle {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.lab-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .lab-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lab-card-item {
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.lab-card-item.unlocked {
+  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(168, 85, 247, 0.08);
+}
+
+.lab-card-item.active {
+  border-color: #22c55e;
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.lab-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lab-item-icon {
+  font-size: 1.8rem;
+}
+
+.lab-item-name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.lab-item-desc {
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+  flex-grow: 1;
+}
+
+.lab-item-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.lab-item-cost {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #facc15;
+}
+
+.lab-btn-unlock {
+  background: #a855f7;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lab-btn-unlock:hover:not(:disabled) {
+  background: #c084fc;
+  box-shadow: 0 0 12px rgba(192, 132, 252, 0.6);
+  transform: translateY(-1px);
+}
+
+.lab-btn-unlock:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lab-toggle-btn {
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-weight: 800;
+  font-size: 0.78rem;
+  cursor: pointer;
+  border: 1px solid;
+  transition: all 0.2s ease;
+}
+
+.lab-toggle-btn.active {
+  background: rgba(34, 197, 94, 0.25);
+  border-color: #22c55e;
+  color: #4ade80;
+}
+
+.lab-toggle-btn.inactive {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #94a3b8;
+}
+
+/* =========================================================
+   LEADERBOARD GAME MODE TABS & 🧬 BADGE
+   ========================================================= */
+.leaderboard-mode-tabs {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 10px 0 12px 0;
+  flex-wrap: wrap;
+}
+
+.lead-tab {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lead-tab:hover {
+  color: #fff;
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.lead-tab.active {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.enhancement-dna-badge {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.82rem;
+  filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.8));
+  vertical-align: middle;
+  cursor: help;
 }
 
 

@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.1] - 2026-09-14 — "Bug-Fix Sprint: Banked Zombie Persistence, Quarantine Garrisons & Threat Evasion"
+
+### Fixed — Meta-Progression, Threat Logic & Visual Polish (@designer, @artist & @qa)
+- **Banked Zombie Persistence** (`StorageSystem.js`, `EntityManager.js`, `main.js`):
+  - Standardized storage key across all systems to `'zombie_chase_bank'` with backward compatibility for legacy keys.
+  - Ensured `depositSwarmToSafeZone` explicitly updates `localStorage.setItem('zombie_chase_bank', bankedZombies)`.
+  - On game boot and Main Menu load, explicitly read `localStorage.getItem('zombie_chase_bank')` and update both `#menu-banked-zombies` and `#lab-banked-count` UI counters immediately.
+  - Eliminated double-counting bug during Safe Zone deposit.
+- **Fortified Quarantine Zone Garrisons** (`CityChunk.js`, `CityStreamer.js`, `EntityManager.js`, `main.js`):
+  - Connected `CityChunk` generation directly to `EntityManager.registerQuarantineZone()` to ensure 4-6 Hazmats and 2-3 Military riflemen spawn upon zone creation.
+  - Added `preventDespawn = true` flag to garrison Hazmats, Military units, and captive civilians, allowing them to bypass the 140m distance-streaming despawn.
+  - Fixed initialization sequence in `main.js _restartGame()`: `entityManager.init()` now runs prior to `cityStreamer.init()`, preventing procedural garrisons from being cleared on load.
+- **Helicopter Evasion Speed Limit & Spotlight Decoupling** (`EntityManager.js`):
+  - Decoupled spotlight center coordinates `(h.spotlightX, h.spotlightZ)` from instant player coordinates.
+  - Clamped spotlight tracking velocity to a maximum of `7.5 m/s` toward Patient Zero.
+  - Since Titan mode (9.375 m/s) and Speed Surge (12.0 m/s) push player speed over 8.0 m/s, player naturally outruns the spotlight circle. If distance from spotlight center exceeds 8.0m, the airstrike timer resets immediately to 0.
+- **UI & Visual Polish** (`index.html`, `style.css`, `InstancedRenderer.js`):
+  - Permanently hid the `#safezone-channel-widget` Refuge box with `display: none !important;`, leaving the 3D in-world holographic billboard and ground beacon ring as clean visual indicators.
+  - Removed `this.beaconBeam` mesh rendering and purple `0xa855f7` cylinder from Titan mode in `InstancedRenderer.js`, eliminating the residual purple vertical line.
+- **Automated QA Assertions** (`scripts/playtest.js`):
+  - Verified `localStorage.getItem('zombie_chase_bank')` integer persistence and UI counter synchronization.
+  - Verified Quarantine garrison units bypass distance-despawn at distances > 140m.
+  - Verified helicopter spotlight tracking velocity is capped at 7.5 m/s and resets the lock-on timer when outrun.
+
+---
+
+## [2.12.0] - 2026-09-14 — "Meta-Progression & Game Mode Expansion: Multiple Modes, Safe Zones & Mutation Lab"
+
+### Added — Multiple Game Modes & Time Attack (@designer & @qa)
+- **Mode Selector UI** (`index.html`, `style.css`, `main.js`):
+  - Added pill selector on the main menu above difficulty selection with options: `[ENDLESS]`, `[TIME ATTACK: 2 MIN]`, `[TIME ATTACK: 5 MIN]`, and `[TIME ATTACK: 10 MIN]`.
+- **Time Attack Countdown HUD**:
+  - Prominent `#hud-time-attack` countdown timer card in top HUD showing remaining minutes and seconds with glowing emerald border.
+  - Pulses with red urgency animation (`.critical`) during the final 10 seconds.
+- **Time Survived Bonus Multiplier**:
+  - Reaching 0:00 triggers game over (`TIME'S UP! OPERATION COMPLETED!`) and awards survival bonus multipliers: `+25%` (2 min), `+50%` (5 min), and `+100%` (10 min).
+- **Leaderboard Partitioning**:
+  - Leaderboards partitioned by composite keys `${difficulty}_${mode}` with mode tabs across Game Over and Standalone Leaderboard modals.
+
+### Added — Zombie Safe Zones & Deposit Mechanic (@designer, @artist & @qa)
+- **World Generation**:
+  - Procedural 25% spawn chance in park chunks (`CityChunk.js`).
+  - 12x12m fenced-in pen on grass with open entryway, physical fence collision, glowing emerald ground beacon ring, and hovering holographic billboard sign reading `"🛡️ ZOMBIE REFUGE - DEPOSIT HERE"`.
+- **Channeling & Deposit Mechanics** (`EntityManager.js`, `main.js`, `StorageSystem.js`):
+  - Stepping into the Safe Zone AABB with follower zombies initiates a 1.5s channeling timer with circular/linear progress bar in `#safezone-channel-widget`.
+  - Holding inside for 1.5s banks all follower zombies, awards `+250 PTS` per specimen, increments persistent `bankedZombies` currency in `localStorage`, and triggers the "Alone & Hunted" survival countdown.
+
+### Added — Mutation Lab Meta-Progression Store (@designer, @artist & @qa)
+- **Store Interface** (`index.html`, `style.css`, `main.js`):
+  - Main menu button `#btn-menu-lab` displays current balance (`(<span id="menu-banked-zombies">0</span> 🧟)`).
+  - Cyberpunk `#lab-modal` dialog featuring specimen balance, upgrade cards, and interactive purchase/toggle buttons.
+- **4 Unlockable Enhancements**:
+  1. **☣️ Titan Duration +50%** (50 🧟): Extends Titan Virus duration from 15.0s to 22.5s.
+  2. **⚡ Swarm Speed +20%** (40 🧟): Boosts follower zombie steering acceleration and speed cap by +20%.
+  3. **🧲 Civilian Pheromone Attraction** (30 🧟): Enhances civilian infection hitbox reach by +35%.
+  4. **💀 Thick Skulls** (45 🧟): Extends follower decontamination mist cure threshold by +30% across Hazmats and Riot Vehicles.
+- **Togglable Loadouts**:
+  - Purchased enhancements can be freely toggled ON or OFF before starting a run.
+
+### Added — Leaderboard Enhancement Tagging (@designer & @qa)
+- Saved scores track `enhancementsUsed: boolean`.
+- Enhanced runs display a glowing `🧬` badge next to the 3-letter initials in leaderboard tables.
+
+---
+
 ## [2.11.0] - 2026-09-14 — "Systems & Gameplay Expansion: Roguelite Mutations, Advanced Enemies & Hazard Systems"
 
 ### Added — Dynamic Panic Pacing & Panic-Linked Escalations (@designer & @qa)
@@ -14,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Slowed down baseline panic accumulation by 50% (scaling over 180s instead of 90s) for longer, more strategic gameplay sessions.
 - **Panic Reduction Mechanics** (`EntityManager.js`, `PowerupManager.js`):
   - Overrunning a Fortified Quarantine Zone decreases City Panic by 20% (`-0.20`).
-  - New Power-Up: **📡 MEDIA BLACKOUT** (`media_blackout`) decreases City Panic by 15% (`-0.15`) and pauses passive panic accumulation for 10 seconds.
+  - New Power-Up: **📡 MEDIA BLACKOUT** (`media_blackout`) decreases City Panic by 15% (`-0.15`), clamped `>= 0`, and pauses passive panic accumulation for 10 seconds.
+  - **Fixed Panic Reduction & HUD Sync**: State persistence ensures `this.panicLevel` directly subtracts 0.15 on pickup, remains completely static for 10 seconds of simulation updates, immediately re-renders `#panic-val` and `#panic-bar-fill`, and seamlessly resumes 180s passive accumulation after the timer expires.
 - **Escalating Threat Levels** (`EntityManager.js`, `TrafficManager.js`):
   - **30%–60% Panic**: Riot/Emergency Vehicles deployed with armored SWAT navy hull, flashing lightbars, and continuous 360-degree fast-cure mist (0.4s cure rate).
   - **60%–85% Panic**: Attack Helicopters spawn at Y=18m, smoothly tracking Patient Zero and casting an 8m tracking spotlight. Lingering in the beam for >2.0s triggers a high-explosive gas bomb / airstrike.

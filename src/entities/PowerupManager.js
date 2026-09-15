@@ -260,6 +260,9 @@ export class PowerupManager {
       if (this.entityManager.onComboInfection) {
         this.entityManager.onComboInfection(this.entityManager.combo, this.entityManager.score, collectX, collectZ);
       }
+      if (typeof this.entityManager._syncPanicUI === 'function') {
+        this.entityManager._syncPanicUI();
+      }
     }
 
     // 2. Create Floating Text Popup
@@ -267,7 +270,7 @@ export class PowerupManager {
 
     // 3. Trigger audio / FX callback
     if (this.onPowerupCollected) {
-      this.onPowerupCollected(p.type.id, p.type.label, p.type.color);
+      this.onPowerupCollected(p, p.type.id, p.type.label, p.type.color);
     }
 
     // 4. Cleanup

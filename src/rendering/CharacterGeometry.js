@@ -62,33 +62,56 @@ export function createHumanoidGeometry(archetype = 'civilian', colorVariation = 
     hairColor = new THREE.Color(0x334155); // Dark strap
     accentColor = new THREE.Color(0xf8fafc); // Crisp white reflective stripe
   } else {
-    // Civilians: Warm peach/tan skin, bright playful clothing palettes (salmon #fb7185, mustard #facc15, sky blue #38bdf8)
-    const shirts = [
-      new THREE.Color(0xfb7185), // Salmon Pink
-      new THREE.Color(0xfacc15), // Mustard Yellow
-      new THREE.Color(0x38bdf8), // Sky Blue
-      new THREE.Color(0x34d399), // Fresh Mint
-      new THREE.Color(0xc084fc), // Playful Lavender
-    ];
-    // Warm peach/tan skin
-    const skins = [
-      new THREE.Color(0xfdba74), // Warm Peach
-      new THREE.Color(0xf5cd79), // Warm Tan
-      new THREE.Color(0xfbbf24), // Golden Warm
-    ];
-    skinColor = skins[colorVariation % skins.length];
-    shirtColor = shirts[colorVariation % shirts.length];
-    pantsColor = colorVariation % 2 === 0 ? new THREE.Color(0x334155) : new THREE.Color(0x475569);
+    // Civilians: 6 Rich Distinct Archetypes (Varying skin tones, clothing, hairstyles, accessories)
+    const variant = Math.abs(colorVariation) % 6;
 
-    // Varied colorful hairstyles (Brown, Blonde, Auburn, Teal Streak, Charcoal)
-    const hairColors = [
-      new THREE.Color(0x3d2b1f), // Deep Espresso Brown
-      new THREE.Color(0xf59e0b), // Golden Blonde
-      new THREE.Color(0xb45309), // Auburn
-      new THREE.Color(0x0284c7), // Sky Teal
-      new THREE.Color(0x1e293b), // Charcoal Black
+    // 0: Sporty Runner (Coral/Pink, Runner Cap, Running Shorts)
+    // 1: Business Commuter (Mustard Yellow, Necktie, Slick Hair, Messenger Pouch)
+    // 2: Casual Student (Mint Green Hoodie, Kangaroo Pocket, Beanie, Blue Jeans)
+    // 3: Hipster / Stylist (Sky Blue, Black Glasses, Spiky Auburn Hair)
+    // 4: Outdoor Explorer (Burnt Orange Utility Jacket, Olive Backpack, Afro Puff, Khakis)
+    // 5: Playful Violet (Pastel Lavender, Pink Headband, Teal Shorts)
+
+    const skins = [
+      new THREE.Color(0xfdba74), // 0: Warm Peach
+      new THREE.Color(0xc68642), // 1: Golden Olive Tan
+      new THREE.Color(0xf5cd79), // 2: Warm Tan
+      new THREE.Color(0xfed7aa), // 3: Soft Fair Peach
+      new THREE.Color(0x8d5524), // 4: Deep Rich Espresso
+      new THREE.Color(0xfdba74), // 5: Peach
     ];
-    hairColor = hairColors[colorVariation % hairColors.length];
+
+    const shirts = [
+      new THREE.Color(0xfb7185), // 0: Coral Pink
+      new THREE.Color(0xfacc15), // 1: Mustard Yellow
+      new THREE.Color(0x34d399), // 2: Fresh Mint
+      new THREE.Color(0x38bdf8), // 3: Sky Blue
+      new THREE.Color(0xea580c), // 4: Burnt Orange
+      new THREE.Color(0xc084fc), // 5: Playful Lavender
+    ];
+
+    const pants = [
+      new THREE.Color(0x1e293b), // 0: Dark Charcoal Running Shorts
+      new THREE.Color(0x334155), // 1: Slate Trousers
+      new THREE.Color(0x1d4ed8), // 2: Indigo Denim Jeans
+      new THREE.Color(0x64748b), // 3: Heather Grey
+      new THREE.Color(0x78716c), // 4: Khaki Cargo
+      new THREE.Color(0x0d9488), // 5: Teal Shorts
+    ];
+
+    const hairs = [
+      new THREE.Color(0x1e293b), // 0: Dark Charcoal
+      new THREE.Color(0x1e293b), // 1: Slick Black
+      new THREE.Color(0xf59e0b), // 2: Golden Blonde
+      new THREE.Color(0xb45309), // 3: Auburn / Flame
+      new THREE.Color(0x0f172a), // 4: Deep Black Afro
+      new THREE.Color(0x3d2b1f), // 5: Espresso Brown
+    ];
+
+    skinColor = skins[variant];
+    shirtColor = shirts[variant];
+    pantsColor = pants[variant];
+    hairColor = hairs[variant];
     accentColor = new THREE.Color(0xffffff);
   }
 
@@ -116,6 +139,42 @@ export function createHumanoidGeometry(archetype = 'civilian', colorVariation = 
     stripe2.translate(0, 0.62, 0);
     _tagGeometry(stripe2, 0.0, accentColor);
     parts.push(stripe2);
+  } else if (archetype === 'civilian') {
+    const variant = Math.abs(colorVariation) % 6;
+    if (variant === 1) {
+      // Business Commuter: Dark Tie + Messenger Bag
+      const tie = new THREE.BoxGeometry(0.08, 0.22, 0.03);
+      tie.translate(0, 0.73, 0.19);
+      _tagGeometry(tie, 0.0, new THREE.Color(0x0f172a));
+      parts.push(tie);
+
+      const bag = new THREE.BoxGeometry(0.12, 0.18, 0.22);
+      bag.translate(0.24, 0.62, 0);
+      _tagGeometry(bag, 0.0, new THREE.Color(0x334155));
+      parts.push(bag);
+    } else if (variant === 2) {
+      // Casual Student: Hoodie front pocket + rolled hood on back
+      const pocket = new THREE.BoxGeometry(0.28, 0.15, 0.03);
+      pocket.translate(0, 0.62, 0.19);
+      _tagGeometry(pocket, 0.0, new THREE.Color(0x059669));
+      parts.push(pocket);
+
+      const hood = new THREE.BoxGeometry(0.36, 0.12, 0.14);
+      hood.translate(0, 0.88, -0.16);
+      _tagGeometry(hood, 0.0, new THREE.Color(0x059669));
+      parts.push(hood);
+    } else if (variant === 4) {
+      // Outdoor Explorer: Utility Backpack on back
+      const backpack = new THREE.BoxGeometry(0.34, 0.34, 0.20);
+      backpack.translate(0, 0.72, -0.25);
+      _tagGeometry(backpack, 0.0, new THREE.Color(0x15803d));
+      parts.push(backpack);
+
+      const pocketBack = new THREE.BoxGeometry(0.22, 0.14, 0.08);
+      pocketBack.translate(0, 0.66, -0.37);
+      _tagGeometry(pocketBack, 0.0, new THREE.Color(0x166534));
+      parts.push(pocketBack);
+    }
   }
 
   // 2. Head (aLimb = 1)
@@ -244,37 +303,105 @@ export function createHumanoidGeometry(archetype = 'civilian', colorVariation = 
     _tagGeometry(hardhatBrim, 1.0, new THREE.Color(0xffffff));
     parts.push(hardhatBrim);
   } else {
-    // Civilians: Caps for runners (~40% of civs) or varied chunky hairstyles
-    const hasCap = (colorVariation % 5 === 0) || (colorVariation % 5 === 2);
-    if (hasCap) {
-      // Runner Cap: Curved cap dome + forward shade visor bill
-      const capColor = shirtColor; // Match lively shirt color
-      const capDome = new THREE.BoxGeometry(0.60, 0.16, 0.52);
-      capDome.translate(0, 1.44, 0.01);
-      _tagGeometry(capDome, 1.0, capColor);
+    // Civilians: 6 Rich Distinct Head Styles & Accessories (aLimb = 1)
+    const variant = Math.abs(colorVariation) % 6;
+    if (variant === 0) {
+      // Variant 0: Sporty Runner Cap (Curved Cap Dome + Shade Visor Bill)
+      const capDome = new THREE.BoxGeometry(0.60, 0.18, 0.52);
+      capDome.translate(0, 1.45, 0.01);
+      _tagGeometry(capDome, 1.0, shirtColor);
       parts.push(capDome);
 
-      const capVisor = new THREE.BoxGeometry(0.44, 0.04, 0.22);
+      const capVisor = new THREE.BoxGeometry(0.44, 0.05, 0.22);
       capVisor.translate(0, 1.38, 0.33);
-      _tagGeometry(capVisor, 1.0, capColor);
+      _tagGeometry(capVisor, 1.0, shirtColor);
       parts.push(capVisor);
+    } else if (variant === 1) {
+      // Variant 1: Business Commuter Slick Side-Part Hair
+      const hairDome = new THREE.BoxGeometry(0.62, 0.18, 0.54);
+      hairDome.translate(0, 1.45, 0.02);
+      _tagGeometry(hairDome, 1.0, hairColor);
+      parts.push(hairDome);
+
+      const sidePart = new THREE.BoxGeometry(0.14, 0.24, 0.38);
+      sidePart.translate(-0.28, 1.34, 0.05);
+      _tagGeometry(sidePart, 1.0, hairColor);
+      parts.push(sidePart);
+    } else if (variant === 2) {
+      // Variant 2: Casual Student Knit Beanie
+      const beanie = new THREE.BoxGeometry(0.62, 0.22, 0.54);
+      beanie.translate(0, 1.46, 0.01);
+      _tagGeometry(beanie, 1.0, new THREE.Color(0xf97316));
+      parts.push(beanie);
+
+      const beanieRim = new THREE.BoxGeometry(0.64, 0.07, 0.56);
+      beanieRim.translate(0, 1.38, 0.01);
+      _tagGeometry(beanieRim, 1.0, new THREE.Color(0xea580c));
+      parts.push(beanieRim);
+    } else if (variant === 3) {
+      // Variant 3: Hipster Stylist with Anime Spiky Hair + Black Glasses
+      const hairDome = new THREE.BoxGeometry(0.62, 0.18, 0.54);
+      hairDome.translate(0, 1.45, 0.02);
+      _tagGeometry(hairDome, 1.0, hairColor);
+      parts.push(hairDome);
+
+      const spike1 = new THREE.BoxGeometry(0.14, 0.18, 0.14);
+      spike1.translate(0, 1.54, 0.12);
+      _tagGeometry(spike1, 1.0, hairColor);
+      parts.push(spike1);
+
+      const spike2 = new THREE.BoxGeometry(0.14, 0.16, 0.14);
+      spike2.translate(-0.16, 1.52, -0.10);
+      _tagGeometry(spike2, 1.0, hairColor);
+      parts.push(spike2);
+
+      // Black Frame Hipster Glasses
+      const frameL = new THREE.BoxGeometry(0.13, 0.15, 0.03);
+      frameL.translate(-0.13, 1.23, 0.27);
+      _tagGeometry(frameL, 1.0, new THREE.Color(0x0f172a));
+      parts.push(frameL);
+
+      const frameR = new THREE.BoxGeometry(0.13, 0.15, 0.03);
+      frameR.translate(0.13, 1.23, 0.27);
+      _tagGeometry(frameR, 1.0, new THREE.Color(0x0f172a));
+      parts.push(frameR);
+
+      const bridge = new THREE.BoxGeometry(0.08, 0.03, 0.03);
+      bridge.translate(0, 1.25, 0.27);
+      _tagGeometry(bridge, 1.0, new THREE.Color(0x0f172a));
+      parts.push(bridge);
+    } else if (variant === 4) {
+      // Variant 4: Outdoor Explorer Afro Puff / High Bun
+      const hairDome = new THREE.BoxGeometry(0.62, 0.16, 0.54);
+      hairDome.translate(0, 1.44, 0.01);
+      _tagGeometry(hairDome, 1.0, hairColor);
+      parts.push(hairDome);
+
+      const puff = new THREE.BoxGeometry(0.32, 0.26, 0.32);
+      puff.translate(0, 1.58, -0.05);
+      _tagGeometry(puff, 1.0, hairColor);
+      parts.push(puff);
     } else {
-      // Chunky Hairstyles (Bob / Spiky / Textured hair)
+      // Variant 5: Playful Violet Bob with Hot Pink Headband
       const hairDome = new THREE.BoxGeometry(0.62, 0.20, 0.54);
       hairDome.translate(0, 1.45, 0.02);
       _tagGeometry(hairDome, 1.0, hairColor);
       parts.push(hairDome);
 
-      // Side bangs / hair locks framing face
-      const bangL = new THREE.BoxGeometry(0.12, 0.25, 0.20);
-      bangL.translate(-0.28, 1.30, 0.15);
+      const bangL = new THREE.BoxGeometry(0.12, 0.26, 0.22);
+      bangL.translate(-0.28, 1.30, 0.14);
       _tagGeometry(bangL, 1.0, hairColor);
       parts.push(bangL);
 
-      const bangR = new THREE.BoxGeometry(0.12, 0.25, 0.20);
-      bangR.translate(0.28, 1.30, 0.15);
+      const bangR = new THREE.BoxGeometry(0.12, 0.26, 0.22);
+      bangR.translate(0.28, 1.30, 0.14);
       _tagGeometry(bangR, 1.0, hairColor);
       parts.push(bangR);
+
+      const headband = new THREE.BoxGeometry(0.64, 0.06, 0.18);
+      headband.translate(0, 1.44, 0.08);
+      _tagGeometry(headband, 1.0, new THREE.Color(0xec4899));
+      parts.push(headband);
     }
   }
 
@@ -398,32 +525,70 @@ export function createHumanoidGeometry(archetype = 'civilian', colorVariation = 
     _tagGeometry(handle, 3.0, new THREE.Color(0xef4444));
     parts.push(handle);
   } else {
-    // Civilian: Short chunky arms hanging at side, anchored at shoulder (Y = 0.86)
-    const leftArm = new THREE.BoxGeometry(0.16, 0.38, 0.16);
-    leftArm.translate(-0.31, 0.67, 0);
-    _tagGeometry(leftArm, 2.0, shirtColor);
-    parts.push(leftArm);
+    // Civilian: Short chunky arms hanging at side with skin hands
+    // Left Arm (aLimb = 2.0)
+    const leftSleeve = new THREE.BoxGeometry(0.16, 0.26, 0.16);
+    leftSleeve.translate(-0.31, 0.73, 0);
+    _tagGeometry(leftSleeve, 2.0, shirtColor);
+    parts.push(leftSleeve);
 
-    const rightArm = new THREE.BoxGeometry(0.16, 0.38, 0.16);
-    rightArm.translate(0.31, 0.67, 0);
-    _tagGeometry(rightArm, 3.0, shirtColor);
-    parts.push(rightArm);
+    const leftHand = new THREE.BoxGeometry(0.13, 0.12, 0.13);
+    leftHand.translate(-0.31, 0.54, 0);
+    _tagGeometry(leftHand, 2.0, skinColor);
+    parts.push(leftHand);
+
+    // Right Arm (aLimb = 3.0)
+    const rightSleeve = new THREE.BoxGeometry(0.16, 0.26, 0.16);
+    rightSleeve.translate(0.31, 0.73, 0);
+    _tagGeometry(rightSleeve, 3.0, shirtColor);
+    parts.push(rightSleeve);
+
+    const rightHand = new THREE.BoxGeometry(0.13, 0.12, 0.13);
+    rightHand.translate(0.31, 0.54, 0);
+    _tagGeometry(rightHand, 3.0, skinColor);
+    parts.push(rightHand);
   }
 
   // -------------------------------------------------------------
   // 5 & 6. SHORT CHUNKY LEGS (Hip pivot at Y = 0.48)
   // -------------------------------------------------------------
-  // 5. Left Leg (aLimb = 4) - Spans Y = 0.0 to 0.48, centered at Y = 0.24
-  const leftLeg = new THREE.BoxGeometry(0.19, 0.48, 0.20);
-  leftLeg.translate(-0.13, 0.24, 0);
+  let shoeColor;
+  if (archetype === 'civilian') {
+    const variant = Math.abs(colorVariation) % 6;
+    const shoes = [
+      new THREE.Color(0xf8fafc), // 0: White running kicks
+      new THREE.Color(0x451a03), // 1: Polished brown dress shoes
+      new THREE.Color(0x090d16), // 2: Dark skate sneakers
+      new THREE.Color(0xf8fafc), // 3: White sneakers
+      new THREE.Color(0x3b2219), // 4: Trail boots
+      new THREE.Color(0x9333ea), // 5: Purple sneakers
+    ];
+    shoeColor = shoes[variant];
+  } else {
+    shoeColor = pantsColor;
+  }
+
+  // 5. Left Leg (aLimb = 4)
+  const leftLeg = new THREE.BoxGeometry(0.19, 0.36, 0.20);
+  leftLeg.translate(-0.13, 0.30, 0);
   _tagGeometry(leftLeg, 4.0, pantsColor);
   parts.push(leftLeg);
 
-  // 6. Right Leg (aLimb = 5) - Spans Y = 0.0 to 0.48, centered at Y = 0.24
-  const rightLeg = new THREE.BoxGeometry(0.19, 0.48, 0.20);
-  rightLeg.translate(0.13, 0.24, 0);
+  const leftShoe = new THREE.BoxGeometry(0.20, 0.12, 0.24);
+  leftShoe.translate(-0.13, 0.06, 0.02);
+  _tagGeometry(leftShoe, 4.0, shoeColor);
+  parts.push(leftShoe);
+
+  // 6. Right Leg (aLimb = 5)
+  const rightLeg = new THREE.BoxGeometry(0.19, 0.36, 0.20);
+  rightLeg.translate(0.13, 0.30, 0);
   _tagGeometry(rightLeg, 5.0, pantsColor);
   parts.push(rightLeg);
+
+  const rightShoe = new THREE.BoxGeometry(0.20, 0.12, 0.24);
+  rightShoe.translate(0.13, 0.06, 0.02);
+  _tagGeometry(rightShoe, 5.0, shoeColor);
+  parts.push(rightShoe);
 
   const merged = BufferGeometryUtils.mergeGeometries(parts);
   return merged;

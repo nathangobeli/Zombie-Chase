@@ -94,7 +94,16 @@ export class CityChunk {
     this.quarantineBannerSprite = null;
     this.quarantineSandbagPositions = [];
     this.forceQuarantineZone = !!(options && options.forceQuarantineZone);
+    this.entityManager = (options && options.entityManager) ? options.entityManager : null;
     this._overrunTime = 0;
+
+    // Safe Zone parameters (@designer, @artist & @qa)
+    this.isSafeZone = false;
+    this.safeZone = null;
+    this.safeZoneRingMesh = null;
+    this.safeZoneInnerRingMesh = null;
+    this.safeZoneBannerSprite = null;
+    this.forceSafeZone = !!(options && options.forceSafeZone);
 
     this.seed = hash2D(cx, cz);
     this.rng = createPRNG(this.seed);
@@ -549,6 +558,8 @@ export class CityChunk {
     // Procedural Quarantine Zone (~15% of park chunks, skip chunk 0,0)
     if (this.forceQuarantineZone || ((this.cx !== 0 || this.cz !== 0) && this.rng() < 0.15)) {
       this._generateQuarantineZone(wx, wz, propGeoms);
+    } else if (this.forceSafeZone || ((this.cx !== 0 || this.cz !== 0) && this.rng() < 0.25)) {
+      this._generateSafeZone(wx, wz, propGeoms);
     }
   }
 
@@ -724,6 +735,11 @@ export class CityChunk {
       this.quarantineBannerSprite = bannerSprite;
       this.meshes.push(bannerSprite);
     }
+
+    // Explicitly command EntityManager to spawn the garrison (4-6 Hazmats, 2-3 Military) at chunk coordinates
+    if (this.entityManager && typeof this.entityManager.registerQuarantineZone === 'function') {
+      this.entityManager.registerQuarantineZone(this);
+    }
   }
 
   /**
@@ -751,6 +767,182 @@ export class CityChunk {
       if (this.quarantineBannerSprite) {
         this.quarantineBannerSprite.position.y = 4.8 + Math.sin(time * 2.5) * 0.15;
       }
+    }
+  }
+
+  /**
+   * Procedural Zombie Safe Zone & Deposit Refuge (@designer, @artist & @qa)
+   * 12x12m wooden/metallic fenced pen on grass with an entryway opening,
+   * glowing holographic sign reading "ZOMBIE REFUGE - DEPOSIT HERE",
+   * and a pulsing emerald ground beacon ring.
+   */
+  _generateSafeZone(sx, sz, propGeoms) {
+    this.isSafeZone = true;
+    this.safeZone = {
+      x: sx,
+      z: sz,
+      radius: 5.5,
+      halfW: 5.0,
+      halfD: 5.0,
+    };
+
+    // 1. Fenced enclosure: 12x12m perimeter centered at (sx, sz)
+    // Metallic frame with rich emerald accents
+    const postColor = new THREE.Color(0x334155);
+    const railColor = new THREE.Color(0x475569);
+    const accentColor = new THREE.Color(0x10b981);
+
+    const half = 5.2;
+    // South side has a 3.4m central opening (-1.7 to +1.7)
+    const fenceSegments = [
+      { x1: -half, z1: -half, x2: half, z2: -half }, // North
+      { x1: -half, z1: -half, x2: -half, z2: half }, // West
+      { x1: half, z1: -half, x2: half, z2: half },   // East
+      { x1: -half, z1: half, x2: -1.7, z2: half },   // South-West
+      { x1: 1.7, z1: half, x2: half, z2: half },     // South-East
+    ];
+
+    for (let s = 0; s < fenceSegments.length; s++) {
+      const seg = fenceSegments[s];
+      const dx = seg.x2 - seg.x1;
+      const dz = seg.z2 - seg.z1;
+      const length = Math.hypot(dx, dz);
+      const angle = Math.atan2(dx, dz);
+      const mx = sx + (seg.x1 + seg.x2) * 0.5;
+      const mz = sz + (seg.z1 + seg.z2) * 0.5;
+
+      // Lower horizontal rail
+      const rail1 = new THREE.BoxGeometry(0.14, 0.16, length);
+      rail1.translate(0, 0.45, 0);
+      rail1.rotateY(angle);
+      rail1.translate(mx, 0.25, mz);
+      this._applyVertexColors(rail1, railColor);
+      this._pushPropGeom(rail1, propGeoms);
+
+      // Upper horizontal rail with glowing emerald trim
+      const rail2 = new THREE.BoxGeometry(0.14, 0.16, length);
+      rail2.translate(0, 0.95, 0);
+      rail2.rotateY(angle);
+      rail2.translate(mx, 0.25, mz);
+      this._applyVertexColors(rail2, accentColor);
+      this._pushPropGeom(rail2, propGeoms);
+
+      // Vertical posts spaced along the segment (~every 1.8m)
+      const postCount = Math.max(2, Math.round(length / 1.8) + 1);
+      for (let p = 0; p < postCount; p++) {
+        const t = p / (postCount - 1);
+        const px = sx + seg.x1 + dx * t;
+        const pz = sz + seg.z1 + dz * t;
+
+        const post = new THREE.BoxGeometry(0.24, 1.25, 0.24);
+        post.translate(px, 0.25 + 0.625, pz);
+        this._applyVertexColors(post, postColor);
+        this._pushPropGeom(post, propGeoms);
+      }
+
+      // Add physical collision obstacle
+      const margin = 0.35;
+      this.obstacles.push({
+        minX: Math.min(seg.x1, seg.x2) + sx - margin,
+        maxX: Math.max(seg.x1, seg.x2) + sx + margin,
+        minZ: Math.min(seg.z1, seg.z2) + sz - margin,
+        maxZ: Math.max(seg.z1, seg.z2) + sz + margin,
+        isSafeZoneFence: true,
+      });
+    }
+
+    // Gate entry posts with emerald glowing beacon caps
+    for (const gateX of [-1.7, 1.7]) {
+      const gatePylon = new THREE.CylinderGeometry(0.18, 0.2, 1.6, 8);
+      gatePylon.translate(sx + gateX, 0.25 + 0.8, sz + half);
+      this._applyVertexColors(gatePylon, accentColor);
+      this._pushPropGeom(gatePylon, propGeoms);
+    }
+
+    // 2. Pulsing Emerald Ground Projection Beacon Ring
+    const ringGeom = new THREE.RingGeometry(4.4, 5.2, 48);
+    ringGeom.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ringMesh = new THREE.Mesh(ringGeom, ringMat);
+    ringMesh.position.set(sx, 0.28, sz);
+    this.safeZoneRingMesh = ringMesh;
+    this.meshes.push(ringMesh);
+
+    // Inner glowing ring
+    const innerRingGeom = new THREE.RingGeometry(1.2, 1.8, 32);
+    innerRingGeom.rotateX(-Math.PI / 2);
+    const innerRingMat = new THREE.MeshBasicMaterial({
+      color: 0x34d399,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const innerMesh = new THREE.Mesh(innerRingGeom, innerRingMat);
+    innerMesh.position.set(sx, 0.282, sz);
+    this.safeZoneInnerRingMesh = innerMesh;
+    this.meshes.push(innerMesh);
+
+    // 3. Hovering Holographic Warning / Refuge Billboard
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = 'rgba(6, 78, 59, 0.94)';
+      if (ctx.roundRect) {
+        ctx.roundRect(8, 8, 496, 112, 16);
+      } else {
+        ctx.rect(8, 8, 496, 112);
+      }
+      ctx.fill();
+
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#10b981';
+      ctx.stroke();
+
+      ctx.font = '900 24px "Outfit", "Inter", sans-serif';
+      ctx.fillStyle = '#a7f3d0';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🛡️ ZOMBIE REFUGE - DEPOSIT HERE', 256, 48);
+
+      ctx.font = '700 14px "Outfit", "Inter", sans-serif';
+      ctx.fillStyle = '#34d399';
+      ctx.fillText('HOLD 1.5s TO BANK SPECIMENS • REWARDS UNLOCKED', 256, 84);
+
+      const bannerTex = new THREE.CanvasTexture(canvas);
+      const bannerMat = new THREE.SpriteMaterial({ map: bannerTex, transparent: true });
+      const bannerSprite = new THREE.Sprite(bannerMat);
+      bannerSprite.scale.set(8.5, 2.125, 1.0);
+      bannerSprite.position.set(sx, 4.5, sz);
+      this.safeZoneBannerSprite = bannerSprite;
+      this.meshes.push(bannerSprite);
+    }
+  }
+
+  /**
+   * Updates holographic emerald pulse and refuge billboard animations.
+   */
+  updateSafeZoneVisuals(time, dt) {
+    if (!this.isSafeZone) return;
+    if (this.safeZoneRingMesh && this.safeZoneRingMesh.material) {
+      const pulse = 0.5 + 0.5 * Math.sin(time * 3.5);
+      this.safeZoneRingMesh.material.opacity = 0.6 + pulse * 0.35;
+    }
+    if (this.safeZoneInnerRingMesh && this.safeZoneInnerRingMesh.material) {
+      const pulse2 = 0.5 + 0.5 * Math.cos(time * 4.0);
+      this.safeZoneInnerRingMesh.material.opacity = 0.4 + pulse2 * 0.4;
+    }
+    if (this.safeZoneBannerSprite) {
+      this.safeZoneBannerSprite.position.y = 4.5 + Math.sin(time * 2.5) * 0.12;
     }
   }
 
@@ -1895,6 +2087,26 @@ export class CityChunk {
         this.quarantineBannerSprite.material.dispose();
       }
       this.quarantineBannerSprite = null;
+    }
+    if (this.safeZoneRingMesh) {
+      if (scene) scene.remove(this.safeZoneRingMesh);
+      if (this.safeZoneRingMesh.geometry) this.safeZoneRingMesh.geometry.dispose();
+      if (this.safeZoneRingMesh.material) this.safeZoneRingMesh.material.dispose();
+      this.safeZoneRingMesh = null;
+    }
+    if (this.safeZoneInnerRingMesh) {
+      if (scene) scene.remove(this.safeZoneInnerRingMesh);
+      if (this.safeZoneInnerRingMesh.geometry) this.safeZoneInnerRingMesh.geometry.dispose();
+      if (this.safeZoneInnerRingMesh.material) this.safeZoneInnerRingMesh.material.dispose();
+      this.safeZoneInnerRingMesh = null;
+    }
+    if (this.safeZoneBannerSprite) {
+      if (scene) scene.remove(this.safeZoneBannerSprite);
+      if (this.safeZoneBannerSprite.material) {
+        if (this.safeZoneBannerSprite.material.map) this.safeZoneBannerSprite.material.map.dispose();
+        this.safeZoneBannerSprite.material.dispose();
+      }
+      this.safeZoneBannerSprite = null;
     }
     this.quarantineSandbagPositions.length = 0;
     this.meshes.length = 0;

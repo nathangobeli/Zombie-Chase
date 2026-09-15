@@ -29,7 +29,13 @@ export class InstancedRenderer {
 
     // 1. Initial Humanoid Geometries
     this.zombieGeom = createHumanoidGeometry('zombie');
-    this.civGeom = createHumanoidGeometry('civilian');
+    // Civilians: 6 Distinct Procedural Geometries (Hats, Ties, Hoodies, Glasses, Backpacks, Headbands)
+    this.NUM_CIV_VARIANTS = 6;
+    this.civGeoms = [];
+    for (let v = 0; v < this.NUM_CIV_VARIANTS; v++) {
+      this.civGeoms.push(createHumanoidGeometry('civilian', v));
+    }
+    this.civGeom = this.civGeoms[0]; // backward compatibility
     this.hazmatGeom = createHumanoidGeometry('hazmat');
     this.militaryGeom = createHumanoidGeometry('military');
     this.pzGeom = createHumanoidGeometry('patient_zero');
@@ -90,20 +96,29 @@ export class InstancedRenderer {
     this.zombieMesh.receiveShadow = true;
     scene.add(this.zombieMesh);
 
-    // 4. Civilian Instanced Mesh (Single Draw Call)
-    this.civMesh = new THREE.InstancedMesh(this.civGeom, this.civMat, this.maxCapacity);
-    this.civMesh.frustumCulled = false; // Prevent culling away from origin
-    this.civMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.civAnimAttr = new THREE.InstancedBufferAttribute(
-      new Float32Array(this.maxCapacity * 4),
-      4
-    );
-    this.civAnimAttr.setUsage(THREE.DynamicDrawUsage);
-    this.civGeom.setAttribute('instanceAnim', this.civAnimAttr);
-    this.civMesh.count = 0;
-    this.civMesh.castShadow = true;
-    this.civMesh.receiveShadow = true;
-    scene.add(this.civMesh);
+    // 4. Civilian Instanced Meshes (6 Distinct Aesthetic Variants, 6 Draw Calls Total)
+    this.civMeshes = [];
+    this.civAnimAttrs = [];
+    for (let v = 0; v < this.NUM_CIV_VARIANTS; v++) {
+      const mesh = new THREE.InstancedMesh(this.civGeoms[v], this.civMat, this.maxCapacity);
+      mesh.frustumCulled = false; // Prevent culling away from origin
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const animAttr = new THREE.InstancedBufferAttribute(
+        new Float32Array(this.maxCapacity * 4),
+        4
+      );
+      animAttr.setUsage(THREE.DynamicDrawUsage);
+      this.civGeoms[v].setAttribute('instanceAnim', animAttr);
+      mesh.count = 0;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      this.civMeshes.push(mesh);
+      this.civAnimAttrs.push(animAttr);
+    }
+    // Backward compatibility references
+    this.civMesh = this.civMeshes[0];
+    this.civAnimAttr = this.civAnimAttrs[0];
 
     // 5. Hazmat Instanced Mesh (Single Draw Call)
     this.hazmatMesh = new THREE.InstancedMesh(this.hazmatGeom, this.hazmatMat, 32);
@@ -345,6 +360,7 @@ export class InstancedRenderer {
       side: THREE.DoubleSide,
     });
     this.beaconBeam = new THREE.Mesh(beamGeom, beamMat);
+    this.beaconBeam.visible = false;
     this.beaconGroup.add(this.beaconBeam);
 
     this.scene.add(this.beaconGroup);
@@ -381,16 +397,9 @@ export class InstancedRenderer {
       this.arrowMesh.rotation.y = pz.angle;
       this.arrowMesh.visible = pzSpeed > 0.15;
 
-      if (entityManager.isTitan && entityManager.titanVirusTimer > 0) {
-        // Geometric purple ring graphic eliminated per designer & artist requirements
-        this.titanRing.visible = false;
-        this.beaconBeam.visible = true;
-        this.beaconBeam.material.opacity = 0.45;
-        this.beaconBeam.material.color.setHex(0xa855f7);
-      } else {
-        this.titanRing.visible = false;
-        this.beaconBeam.visible = false;
-      }
+      // Titan Mode: Titan character mesh scaling is rendered via pzScale; no purple line, beam, or ring visualizer (@designer & @artist)
+      this.titanRing.visible = false;
+      this.beaconBeam.visible = false;
 
       // Last Stand Decontamination Warning Ring (above head when taking mist with 0 followers)
       if (entityManager.pzSprayTime > 0 && entityManager.zombies.length === 0 && !entityManager.isTitan) {
@@ -456,18 +465,18 @@ export class InstancedRenderer {
       this.hordeShadow.visible = entityManager.zombies.length > 2;
     }
 
-    // 3. Update Civilians (InstancedMesh - Single Draw Call)
+    // 3. Update Civilians (Partitioned into 6 Distinct InstancedMesh Variants)
     // G5: Skip hidden civilians; G7: Pass cureFlail as flail param
     const civs = entityManager.civilians;
-    const cCount = Math.min(civs.filter(c => !c.hidden).length, this.maxCapacity);
-    this.civMesh.count = cCount;
+    const variantCounts = [0, 0, 0, 0, 0, 0];
 
-    const cAnimArr = this.civAnimAttr.array;
-    let cIdx = 0;
-
-    for (let i = 0; i < civs.length && cIdx < cCount; i++) {
+    for (let i = 0; i < civs.length; i++) {
       const c = civs[i];
       if (c.hidden) continue;
+      const v = Math.abs(c.variant !== undefined ? c.variant : (c.colorVariation !== undefined ? c.colorVariation : (c.id || i))) % this.NUM_CIV_VARIANTS;
+      const slot = variantCounts[v];
+      if (slot >= this.maxCapacity) continue;
+
       const speed = Math.hypot(c.vx, c.vz);
       const angle = speed > 0.08 ? Math.atan2(c.vx, c.vz) : c.wanderAngle;
       const groundY = getCharacterGroundY(c.x, c.z);
@@ -477,18 +486,23 @@ export class InstancedRenderer {
       this.dummy.scale.set(1, 1, 1);
       this.dummy.updateMatrix();
 
-      this.civMesh.setMatrixAt(cIdx, this.dummy.matrix);
+      this.civMeshes[v].setMatrixAt(slot, this.dummy.matrix);
 
-      const ia = cIdx * 4;
-      cAnimArr[ia] = speed;
-      cAnimArr[ia + 1] = c.walkPhase;
-      cAnimArr[ia + 2] = 0.0; // Civilian walk/run
-      cAnimArr[ia + 3] = c.cureFlail || 0.0; // G7: stagger on newly-cured
-      cIdx++;
+      const animArr = this.civAnimAttrs[v].array;
+      const ia = slot * 4;
+      animArr[ia] = speed;
+      animArr[ia + 1] = c.walkPhase;
+      animArr[ia + 2] = 0.0; // Civilian walk/run
+      animArr[ia + 3] = c.cureFlail || 0.0; // G7: stagger on newly-cured
+
+      variantCounts[v]++;
     }
 
-    this.civMesh.instanceMatrix.needsUpdate = true;
-    this.civAnimAttr.needsUpdate = true;
+    for (let v = 0; v < this.NUM_CIV_VARIANTS; v++) {
+      this.civMeshes[v].count = variantCounts[v];
+      this.civMeshes[v].instanceMatrix.needsUpdate = true;
+      this.civAnimAttrs[v].needsUpdate = true;
+    }
 
     // 4. Update Hazmats & Cones
     // G3: Hazmat heli drop — interpolate Y from dropY to ground

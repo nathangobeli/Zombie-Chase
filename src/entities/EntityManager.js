@@ -62,6 +62,20 @@ export class EntityManager {
     this.followerCureThreshold = 0.55; // Calibrated ~0.55s continuous mist window for follower zombies
     this.quarantineZones = new Map();  // Active Fortified Quarantine Outposts
 
+    // Safe Zone parameters & callbacks (@designer, @artist & @qa)
+    this.safeZones = new Map();
+    this.safeZoneChannelTimer = 0;
+    this.safeZoneChannelTarget = 1.5;
+    this.isChannelingSafeZone = false;
+    this.onSafeZoneProgress = null;   // (isChanneling, progress, remainingTime)
+    this.onSafeZoneDeposit = null;    // (count, pointsAwarded)
+
+    // Mutation Lab meta-progression enhancement buffs
+    this.activeEnhancements = {};
+    this.titanDurationBuff = 15.0;
+    this.swarmSpeedMultiplier = 1.0;
+    this.enhancementFollowerCureMult = 1.0;
+
     // Arcade Power-ups & Threat Tracking
     this.speedSurgeTimer = 0;
     this.meatMagnetTimer = 0;
@@ -101,7 +115,9 @@ export class EntityManager {
     // Dynamic Panic Pacing & Reduction
     this.panicAccumulated = 0;
     this.panicReduction = 0;
+    this.panicPauseTimer = 0;
     this.mediaBlackoutTimer = 0;
+    this.onPanicChanged = null;
 
     // Roguelite Mutation Rewards
     this.onShowMutationModal = null; // (callback)
@@ -150,9 +166,10 @@ export class EntityManager {
     this.panicLevel = 0;
     this.panicAccumulated = 0;
     this.panicReduction = 0;
+    this.panicPauseTimer = 0;
     this.mediaBlackoutTimer = 0;
-    this.followerCureThreshold = 0.55;
-    this.infectionHitRadiusMultiplier = 1.0;
+    this.followerCureThreshold = 0.55 * (this.enhancementFollowerCureMult || 1.0);
+    this.infectionHitRadiusMultiplier = this.activeEnhancements?.civilianPheromone ? 1.35 : 1.0;
     this.mutations = { acidicBlood: false, bruteBone: false, hyperInfectious: false };
 
     // Clean up dynamic meshes for helicopters, tanks, and puddles
@@ -207,9 +224,11 @@ export class EntityManager {
 
     // 4-Stage Progressive Difficulty: Initial stage is Outbreak Dawn (0:00 - 1:00)
     this.currentStage = 1;
-    this.cureThreshold = 3.5;
-    this.followerCureThreshold = 0.55;
+    this.followerCureThreshold = 0.55 * (this.enhancementFollowerCureMult || 1.0);
     this.quarantineZones.clear();
+    this.safeZones.clear();
+    this.safeZoneChannelTimer = 0;
+    this.isChannelingSafeZone = false;
 
     // Spawn wandering civilians
     for (let i = 0; i < civilianCount; i++) {
@@ -283,7 +302,8 @@ export class EntityManager {
       wanderAngle: Math.random() * Math.PI * 2,
       fleeTimer: 0,
       walkPhase: Math.random() * 10.0,
-      colorVariation: Math.floor(Math.random() * 5),
+      colorVariation: Math.floor(Math.random() * 6),
+      variant: Math.floor(Math.random() * 6),
     };
 
     this.civilians.push(civilian);
@@ -460,7 +480,10 @@ export class EntityManager {
    */
   reducePanic(amount) {
     this.panicReduction = (this.panicReduction || 0) + amount;
-    this.panicLevel = Math.max(0.0, Math.min(1.0, this.panicLevel - amount));
+    this.panicLevel = Math.max(0.0, Math.min(1.0, (this.panicLevel || 0) - amount));
+    this.panicAccumulated = this.panicLevel;
+    this._checkPanicMilestones();
+    this._syncPanicUI();
   }
 
   /**
@@ -470,6 +493,52 @@ export class EntityManager {
     this.panicLevel = Math.max(0.0, Math.min(1.0, val));
     this.panicAccumulated = this.panicLevel;
     this.panicReduction = 0;
+    this.panicPauseTimer = 0;
+    this.mediaBlackoutTimer = 0;
+    this._checkPanicMilestones();
+    this._syncPanicUI();
+  }
+
+  /**
+   * Evaluates escalation thresholds when panic changes
+   */
+  _checkPanicMilestones() {
+    if (this.panicLevel >= 0.85 && this._lastPanicMilestone < 3) {
+      this._lastPanicMilestone = 3;
+      if (this.onPanicEscalation) this.onPanicEscalation('🚨 85% PANIC: ARMORED BATTLE TANKS AT INTERSECTIONS!');
+    } else if (this.panicLevel >= 0.60 && this._lastPanicMilestone < 2) {
+      this._lastPanicMilestone = 2;
+      if (this.onPanicEscalation) this.onPanicEscalation('🚁 60% PANIC: ATTACK HELICOPTER INBOUND WITH SPOTLIGHT!');
+    } else if (this.panicLevel >= 0.30 && this._lastPanicMilestone < 1) {
+      this._lastPanicMilestone = 1;
+      if (this.onPanicEscalation) this.onPanicEscalation('🚨 30% PANIC: RIOT VEHICLES DISPATCHED WITH 360° MIST!');
+    }
+
+    if (this.panicLevel < 0.30) {
+      this._lastPanicMilestone = 0;
+    } else if (this.panicLevel < 0.60) {
+      this._lastPanicMilestone = Math.min(this._lastPanicMilestone, 1);
+    } else if (this.panicLevel < 0.85) {
+      this._lastPanicMilestone = Math.min(this._lastPanicMilestone, 2);
+    }
+  }
+
+  /**
+   * Immediately syncs panic values to DOM HUD and telemetry
+   */
+  _syncPanicUI() {
+    if (typeof window !== 'undefined') {
+      if (window.__GAME_STATE__) {
+        window.__GAME_STATE__.panicLevel = Math.round((this.panicLevel || 0) * 100) / 100;
+      }
+      const valEl = document.getElementById('panic-val');
+      if (valEl) valEl.textContent = `${Math.round((this.panicLevel || 0) * 100)}%`;
+      const barFill = document.getElementById('panic-bar-fill');
+      if (barFill) barFill.style.width = `${Math.min(100, Math.round((this.panicLevel || 0) * 100))}%`;
+    }
+    if (typeof this.onPanicChanged === 'function') {
+      this.onPanicChanged(this.panicLevel);
+    }
   }
 
   /**
@@ -809,17 +878,22 @@ export class EntityManager {
       this.spawnBloaterBomb();
       if (this.onPanicEscalation) this.onPanicEscalation('💥 BLOATER BOMB DEPLOYED!');
     } else if (typeId === 'titan_virus') {
-      this.titanVirusTimer = 15.0;
+      this.titanVirusTimer = this.titanDurationBuff || 15.0;
       this.isTitan = true;
       this.isSprayInvulnerable = true;
       if (this.particles && this.particles.burstTitanPuff && this.patientZero) {
         this.particles.burstTitanPuff(this.patientZero.x, this.patientZero.z);
       }
       if (this.onTitanActivated) this.onTitanActivated();
-      if (this.onPanicEscalation) this.onPanicEscalation('☣️ TITAN VIRUS ACTIVATED: 3X SCALE & TOTAL CONVERSION!');
     } else if (typeId === 'media_blackout') {
-      this.reducePanic(0.15);
+      // Explicitly subtract 15% (0.15) from current panic state variable, clamped >= 0
+      this.panicLevel = Math.max(0.0, (this.panicLevel || 0) - 0.15);
+      this.panicAccumulated = this.panicLevel;
+      this.panicReduction = (this.panicReduction || 0) + 0.15;
+      this.panicPauseTimer = 10.0;
       this.mediaBlackoutTimer = 10.0;
+      this._checkPanicMilestones();
+      this._syncPanicUI();
       if (this.onPanicEscalation) this.onPanicEscalation('📡 MEDIA BLACKOUT: -15% PANIC & 10s TRANSMISSION PAUSE!');
     }
   }
@@ -923,26 +997,22 @@ export class EntityManager {
       }
     }
 
-    // Panic starts at 0.0 (citizens relaxed and slower) and smoothly scales 50% slower (over 180s baseline + horde size)
-    if (this.mediaBlackoutTimer > 0) {
-      this.mediaBlackoutTimer = Math.max(0, this.mediaBlackoutTimer - dt);
+    // Main panic accumulation loop (strictly respects panicPauseTimer / mediaBlackoutTimer)
+    const isPanicPaused = (this.panicPauseTimer > 0.0001) || (this.mediaBlackoutTimer > 0.0001);
+    if (isPanicPaused) {
+      const remaining = Math.max(this.panicPauseTimer || 0, this.mediaBlackoutTimer || 0) - dt;
+      this.panicPauseTimer = remaining <= 0.0001 ? 0 : remaining;
+      this.mediaBlackoutTimer = this.panicPauseTimer;
+      // While paused, panic accumulation is strictly suspended and panicLevel remains completely static
     } else {
-      this.panicAccumulated = (this.panicAccumulated || 0) + dt / 180.0;
+      this.panicPauseTimer = 0;
+      this.mediaBlackoutTimer = 0;
+      // 50% slower passive panic accumulation rate (scales over 180s baseline)
+      this.panicLevel = Math.max(0.0, Math.min(1.0, (this.panicLevel || 0) + dt / 180.0));
+      this.panicAccumulated = this.panicLevel;
+      this._checkPanicMilestones();
     }
-    const hordePanic = (this.zombies.length / 40.0) * 0.4;
-    this.panicLevel = Math.max(0.0, Math.min(1.0, (this.panicAccumulated || 0) + hordePanic - (this.panicReduction || 0)));
-
-    // Notify milestone when panic reaches notable escalation tiers (@designer)
-    if (this.panicLevel >= 0.30 && this._lastPanicMilestone < 1) {
-      this._lastPanicMilestone = 1;
-      if (this.onPanicEscalation) this.onPanicEscalation('🚨 30% PANIC: RIOT VEHICLES DISPATCHED WITH 360° MIST!');
-    } else if (this.panicLevel >= 0.60 && this._lastPanicMilestone < 2) {
-      this._lastPanicMilestone = 2;
-      if (this.onPanicEscalation) this.onPanicEscalation('🚁 60% PANIC: ATTACK HELICOPTER INBOUND WITH SPOTLIGHT!');
-    } else if (this.panicLevel >= 0.85 && this._lastPanicMilestone < 3) {
-      this._lastPanicMilestone = 3;
-      if (this.onPanicEscalation) this.onPanicEscalation('🚨 85% PANIC: ARMORED BATTLE TANKS AT INTERSECTIONS!');
-    }
+    this._syncPanicUI();
 
     // G1: Combo decay
     if (this.comboTimer > 0) {
@@ -1207,15 +1277,16 @@ export class EntityManager {
         steerZ = result.steerZ;
       }
 
-      z.vx += steerX * dt * 6.0;
-      z.vz += steerZ * dt * 6.0;
+      const swarmMult = this.swarmSpeedMultiplier || 1.0;
+      z.vx += steerX * dt * 6.0 * swarmMult;
+      z.vz += steerZ * dt * 6.0 * swarmMult;
 
       // Dynamic catch-up speed limit so zombies NEVER fall behind Patient Zero
       const distToPz = Math.hypot(pz.x - z.x, pz.z - z.z);
-      let zSpeedLimit = pz.isFrenzy ? 12.0 : (this.currentFormation === 'spearhead' ? 9.1 : 7.6);
+      let zSpeedLimit = (pz.isFrenzy ? 12.0 : (this.currentFormation === 'spearhead' ? 9.1 : 7.6)) * swarmMult;
       if (distToPz > 3.5) {
         // Accelerate up to 11.5 m/s when catching up to the pack
-        zSpeedLimit += Math.min(4.0, (distToPz - 3.5) * 0.7);
+        zSpeedLimit += Math.min(4.0, (distToPz - 3.5) * 0.7) * swarmMult;
       }
 
       const curSpeed = Math.hypot(z.vx, z.vz);
@@ -2289,6 +2360,9 @@ export class EntityManager {
     // 13d. Quarantine Zones Overrun Evaluation (@designer, @artist & @qa)
     this._updateQuarantineZones(dt);
 
+    // 13e. Zombie Safe Zone & Deposit Evaluation (@designer, @artist & @qa)
+    this._updateSafeZones(dt, pz);
+
     // 14. Population Streaming & Memory Cleanup
     this.updatePopulationStreaming(pz);
   }
@@ -2344,7 +2418,7 @@ export class EntityManager {
     // 1. Despawn distant non-horde entities (> 140m away from Patient Zero)
     for (let i = this.civilians.length - 1; i >= 0; i--) {
       const c = this.civilians[i];
-      if (c.isCaptive) continue;
+      if (c.preventDespawn || c.isCaptive) continue;
       const distSq = (c.x - pzRef.x) ** 2 + (c.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.civilians.splice(i, 1);
@@ -2353,6 +2427,7 @@ export class EntityManager {
 
     for (let i = this.strayZombies.length - 1; i >= 0; i--) {
       const s = this.strayZombies[i];
+      if (s.preventDespawn) continue;
       const distSq = (s.x - pzRef.x) ** 2 + (s.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.strayZombies.splice(i, 1);
@@ -2361,7 +2436,7 @@ export class EntityManager {
 
     for (let i = this.hazmats.length - 1; i >= 0; i--) {
       const h = this.hazmats[i];
-      if (h.isQuarantineGarrison) continue;
+      if (h.preventDespawn || h.isQuarantineGarrison) continue;
       const distSq = (h.x - pzRef.x) ** 2 + (h.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.hazmats.splice(i, 1);
@@ -2370,7 +2445,7 @@ export class EntityManager {
 
     for (let i = this.militaryUnits.length - 1; i >= 0; i--) {
       const m = this.militaryUnits[i];
-      if (m.isQuarantineGarrison) continue;
+      if (m.preventDespawn || m.isQuarantineGarrison) continue;
       const distSq = (m.x - pzRef.x) ** 2 + (m.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.militaryUnits.splice(i, 1);
@@ -2379,6 +2454,7 @@ export class EntityManager {
 
     for (let i = this.wardens.length - 1; i >= 0; i--) {
       const w = this.wardens[i];
+      if (w.preventDespawn) continue;
       const distSq = (w.x - pzRef.x) ** 2 + (w.z - pzRef.z) ** 2;
       if (distSq > despawnRadiusSq) {
         this.wardens.splice(i, 1);
@@ -2729,6 +2805,7 @@ export class EntityManager {
     for (let i = 0; i < hazmatStations.length; i++) {
       const pos = hazmatStations[i];
       const h = this.spawnHazmat(pos.x, pos.z, false);
+      h.preventDespawn = true;
       h.isQuarantineGarrison = true;
       h.quarantineZoneKey = chunk.key;
       h.guardCenter = { x: qx, z: qz };
@@ -2769,6 +2846,7 @@ export class EntityManager {
         aimThreshold: 1.4,
         cooldownTimer: 0,
         tracerShot: null,
+        preventDespawn: true,
         isQuarantineGarrison: true,
         quarantineZoneKey: chunk.key,
         sandbagCoverPos: { x: sp.x, z: sp.z },
@@ -2796,9 +2874,11 @@ export class EntityManager {
         wanderAngle: Math.random() * Math.PI * 2,
         fleeTimer: 0,
         walkPhase: 0,
-        colorVariation: Math.floor(Math.random() * 4),
+        colorVariation: Math.floor(Math.random() * 6),
+        variant: Math.floor(Math.random() * 6),
         cureFlail: 0,
         cureImmunity: 0,
+        preventDespawn: true,
         isCaptive: true,
         quarantineZoneKey: chunk.key,
         guardCenter: { x: qx, z: qz },
@@ -2817,11 +2897,21 @@ export class EntityManager {
   unregisterQuarantineZone(chunkKey) {
     if (!this.quarantineZones.has(chunkKey)) return;
     const zone = this.quarantineZones.get(chunkKey);
-    // If not overrun, purge lingering captive civilians
+    // If not overrun, purge lingering captive civilians and garrison units
     if (!zone.isOverrun) {
       for (let i = this.civilians.length - 1; i >= 0; i--) {
         if (this.civilians[i].quarantineZoneKey === chunkKey) {
           this.civilians.splice(i, 1);
+        }
+      }
+      for (let i = this.hazmats.length - 1; i >= 0; i--) {
+        if (this.hazmats[i].quarantineZoneKey === chunkKey) {
+          this.hazmats.splice(i, 1);
+        }
+      }
+      for (let i = this.militaryUnits.length - 1; i >= 0; i--) {
+        if (this.militaryUnits[i].quarantineZoneKey === chunkKey) {
+          this.militaryUnits.splice(i, 1);
         }
       }
     }
@@ -2936,6 +3026,7 @@ export class EntityManager {
           const c = this.civilians[ci];
           if (c.quarantineZoneKey === key && c.isCaptive) {
             c.isCaptive = false;
+            c.preventDespawn = false;
             c.fleeTimer = 5.0;
             c.fleeSpeed = 4.2;
             c.cureImmunity = 0; // Immediately vulnerable to infection!
@@ -2956,6 +3047,192 @@ export class EntityManager {
           this.onShowMutationModal();
         }
       }
+    }
+  }
+
+  // =========================================================================
+  // ZOMBIE SAFE ZONES & DEPOSIT REFUGE SYSTEM (@designer, @artist & @qa)
+  // =========================================================================
+
+  /**
+   * Registers a newly streamed Safe Zone chunk.
+   */
+  registerSafeZone(chunk) {
+    if (!chunk || !chunk.isSafeZone || !chunk.safeZone) return null;
+    if (this.safeZones.has(chunk.key)) return this.safeZones.get(chunk.key);
+    const zone = {
+      chunkKey: chunk.key,
+      x: chunk.safeZone.x,
+      z: chunk.safeZone.z,
+      radius: chunk.safeZone.radius || 5.5,
+      halfW: chunk.safeZone.halfW || 5.0,
+      halfD: chunk.safeZone.halfD || 5.0,
+      chunkRef: chunk,
+    };
+    this.safeZones.set(chunk.key, zone);
+    return zone;
+  }
+
+  /**
+   * Unregisters a safe zone when its chunk is unstreamed.
+   */
+  unregisterSafeZone(chunkKey) {
+    this.safeZones.delete(chunkKey);
+  }
+
+  /**
+   * Spawns a synthetic Safe Zone at given coordinates (for testing and manual triggers).
+   */
+  spawnSafeZone(x, z) {
+    const mockChunk = {
+      key: `mock_safe_${x}_${z}`,
+      isSafeZone: true,
+      safeZone: { x, z, radius: 5.5, halfW: 5.0, halfD: 5.0 },
+    };
+    return this.registerSafeZone(mockChunk);
+  }
+
+  /**
+   * Evaluates Patient Zero positioning inside Safe Zone AABB and ticks channeling.
+   */
+  _updateSafeZones(dt, pz) {
+    if (!this.safeZones || this.safeZones.size === 0 || !pz) {
+      if (this.isChannelingSafeZone) {
+        this.isChannelingSafeZone = false;
+        this.safeZoneChannelTimer = 0;
+        if (this.onSafeZoneProgress) this.onSafeZoneProgress(false, 0, 0);
+      }
+      return;
+    }
+
+    let insideZone = null;
+    for (const [, zone] of this.safeZones) {
+      const dx = Math.abs(pz.x - zone.x);
+      const dz = Math.abs(pz.z - zone.z);
+      if (dx <= zone.halfW && dz <= zone.halfD) {
+        insideZone = zone;
+        break;
+      }
+    }
+
+    // Only channel if inside a safe zone AND player has follower zombies
+    if (insideZone && this.zombies.length > 0) {
+      this.isChannelingSafeZone = true;
+      this.safeZoneChannelTimer += dt;
+      const progress = Math.min(1.0, this.safeZoneChannelTimer / this.safeZoneChannelTarget);
+      const remainingTime = Math.max(0, this.safeZoneChannelTarget - this.safeZoneChannelTimer);
+
+      if (this.onSafeZoneProgress) {
+        this.onSafeZoneProgress(true, progress, remainingTime);
+      }
+
+      if (this.safeZoneChannelTimer >= this.safeZoneChannelTarget) {
+        this.depositSwarmToSafeZone(insideZone);
+      }
+    } else {
+      if (this.isChannelingSafeZone) {
+        this.isChannelingSafeZone = false;
+        this.safeZoneChannelTimer = 0;
+        if (this.onSafeZoneProgress) {
+          this.onSafeZoneProgress(false, 0, 0);
+        }
+      }
+    }
+  }
+
+  /**
+   * Completes Safe Zone deposit: removes all followers, awards points,
+   * triggers Alone & Hunted countdown, and emits deposit callback.
+   */
+  depositSwarmToSafeZone(zone) {
+    const count = this.zombies.length;
+    if (count === 0) return;
+
+    // Visual poofs for all deposited zombies
+    for (let zi = 0; zi < this.zombies.length; zi++) {
+      const z = this.zombies[zi];
+      if (this.particles && this.particles.burstInfectionPuff) {
+        this.particles.burstInfectionPuff(z.x, z.z, 0x10b981);
+      }
+    }
+
+    // Clear follower zombies
+    this.zombies.length = 0;
+
+    // Award +250 points per deposited zombie
+    const pointsAwarded = count * 250;
+    this.score += pointsAwarded;
+
+    // Instantly trigger "Alone & Hunted" survival countdown
+    this.hasHadHorde = true;
+    this.isAloneHunted = true;
+    this.aloneTimer = this.maxAloneTime;
+    if (this.onAloneStateChanged) {
+      this.onAloneStateChanged(true, this.aloneTimer, this.maxAloneTime);
+    }
+
+    // Explicitly persist banked zombies to localStorage ('zombie_chase_bank')
+    try {
+      if (this.storageSystem && typeof this.storageSystem.addBankedZombies === 'function') {
+        this.bankedZombies = this.storageSystem.addBankedZombies(count);
+      } else if (typeof localStorage !== 'undefined') {
+        const stored = parseInt(localStorage.getItem('zombie_chase_bank') || localStorage.getItem('zombie_chase_banked') || '0', 10) || 0;
+        const total = stored + count;
+        localStorage.setItem('zombie_chase_bank', String(total));
+        localStorage.setItem('zombie_chase_banked', String(total));
+        this.bankedZombies = total;
+      }
+    } catch (e) {
+      console.warn('[EntityManager] Failed to persist banked zombies to localStorage:', e);
+    }
+
+    // Reset channel state
+    this.isChannelingSafeZone = false;
+    this.safeZoneChannelTimer = 0;
+    if (this.onSafeZoneProgress) {
+      this.onSafeZoneProgress(false, 0, 0);
+    }
+
+    // Dispatch event to main.js / UI
+    if (this.onSafeZoneDeposit) {
+      this.onSafeZoneDeposit(count, pointsAwarded);
+    }
+  }
+
+  /**
+   * Applies active Mutation Lab enhancement buffs (@designer & @qa).
+   */
+  applyEnhancementBuffs(enhancements = {}) {
+    this.activeEnhancements = { ...this.activeEnhancements, ...enhancements };
+
+    // 1. Titan Duration +50%: base is 15.0s, buffed is 22.5s
+    if (this.activeEnhancements.titanDuration) {
+      this.titanDurationBuff = 22.5;
+    } else {
+      this.titanDurationBuff = 15.0;
+    }
+
+    // 2. Swarm Speed +20%: multiplier for zombies in swarm
+    if (this.activeEnhancements.swarmSpeed) {
+      this.swarmSpeedMultiplier = 1.20;
+    } else {
+      this.swarmSpeedMultiplier = 1.0;
+    }
+
+    // 3. Civilian Pheromone Attraction: increases infection hit radius / attraction
+    if (this.activeEnhancements.civilianPheromone) {
+      this.infectionHitRadiusMultiplier = 1.35;
+    } else {
+      this.infectionHitRadiusMultiplier = 1.0;
+    }
+
+    // 4. Thick Skulls: increases follower cure resistance threshold by +30%
+    if (this.activeEnhancements.thickSkulls) {
+      this.enhancementFollowerCureMult = 1.30;
+      this.followerCureThreshold = 0.55 * 1.30;
+    } else {
+      this.enhancementFollowerCureMult = 1.0;
+      this.followerCureThreshold = 0.55;
     }
   }
 
@@ -3051,6 +3328,9 @@ export class EntityManager {
       vx: 0,
       vz: 0,
       speed: 10.5,
+      spotlightX: x,
+      spotlightZ: z,
+      spotlightSpeed: 7.5,
       lockOnTimer: 0,
       meshData,
     };
@@ -3083,7 +3363,7 @@ export class EntityManager {
         h.meshData.rotor.rotation.y += dt * 32.0;
       }
 
-      // Smooth flight tracking towards Patient Zero
+      // 1. Helicopter physical flight tracking towards Patient Zero
       const dx = pz.x - h.x;
       const dz = pz.z - h.z;
       const dist = Math.hypot(dx, dz);
@@ -3098,8 +3378,49 @@ export class EntityManager {
         h.meshData.group.position.set(h.x, 18.0, h.z);
       }
 
-      // Check if Patient Zero lingers in the tracking spotlight (radius 8m)
-      if (dist <= 8.0) {
+      // 2. Helicopter spotlight tracking: maximum tracking velocity capped at 7.5 m/s
+      if (h.spotlightX === undefined) h.spotlightX = h.x;
+      if (h.spotlightZ === undefined) h.spotlightZ = h.z;
+
+      const sDx = pz.x - h.spotlightX;
+      const sDz = pz.z - h.spotlightZ;
+      const sDist = Math.hypot(sDx, sDz);
+      const maxSpotlightSpeed = h.spotlightSpeed || 7.5; // 7.5 m/s maximum tracking velocity
+      const maxSpotlightStep = maxSpotlightSpeed * dt;
+
+      if (sDist <= maxSpotlightStep) {
+        h.spotlightX = pz.x;
+        h.spotlightZ = pz.z;
+      } else if (sDist > 0) {
+        h.spotlightX += (sDx / sDist) * maxSpotlightStep;
+        h.spotlightZ += (sDz / sDist) * maxSpotlightStep;
+      }
+
+      // Update 3D visual position of ground ring and spotlight cone
+      if (h.meshData && h.meshData.groundRing) {
+        h.meshData.groundRing.position.set(h.spotlightX - h.x, -17.95, h.spotlightZ - h.z);
+      }
+      if (h.meshData && h.meshData.cone) {
+        h.meshData.cone.position.set(
+          (h.spotlightX - h.x) * 0.5,
+          -9.0,
+          (h.spotlightZ - h.z) * 0.5
+        );
+      }
+
+      // 3. Check distance from Patient Zero to spotlight center
+      const distFromSpotlight = Math.hypot(pz.x - h.spotlightX, pz.z - h.spotlightZ);
+
+      // Player naturally outruns spotlight (> 8.0m) during Speed Surge (12 m/s) or Titan (9.375 m/s)
+      if (distFromSpotlight > 8.0) {
+        h.lockOnTimer = 0; // Reset airstrike timer when player outruns spotlight
+        if (h.meshData && h.meshData.ringMat) {
+          h.meshData.ringMat.color.setHex(0xfacc15);
+          h.meshData.coneMat.color.setHex(0xfef08a);
+          h.meshData.ringMat.opacity = 0.65;
+        }
+      } else {
+        // Player lingers inside spotlight circle (<= 8.0m)
         h.lockOnTimer = (h.lockOnTimer || 0) + dt;
         if (h.meshData && h.meshData.ringMat) {
           h.meshData.ringMat.color.setHex(0xef4444);
@@ -3108,15 +3429,8 @@ export class EntityManager {
         }
 
         if (h.lockOnTimer >= 2.0) {
-          this.triggerAirstrike(h.x, h.z);
+          this.triggerAirstrike(h.spotlightX, h.spotlightZ);
           h.lockOnTimer = -3.0; // 3.0s cooldown before next lock
-        }
-      } else {
-        h.lockOnTimer = Math.max(0, (h.lockOnTimer || 0) - dt * 1.5);
-        if (h.meshData && h.meshData.ringMat) {
-          h.meshData.ringMat.color.setHex(0xfacc15);
-          h.meshData.coneMat.color.setHex(0xfef08a);
-          h.meshData.ringMat.opacity = 0.65;
         }
       }
     }

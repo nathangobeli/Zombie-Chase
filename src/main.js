@@ -13,8 +13,9 @@ import { InputController } from './controls/InputController.js';
 import { CityStreamer } from './world/CityStreamer.js';
 import { AssetLoader } from './world/AssetLoader.js';
 import { AudioSystem } from './audio/AudioSystem.js';
-import { StorageSystem } from './systems/StorageSystem.js';
+import { StorageSystem, ENHANCEMENT_DEFS } from './systems/StorageSystem.js';
 import { TrafficManager } from './world/TrafficManager.js';
+import { MenuSlimeFX } from './ui/MenuSlimeFX.js';
 
 // V2: Day/night color transitions keyed to panicLevel
 const SKY_CALM = new THREE.Color(0x93c5fd); // Sky blue (#93c5fd)
@@ -134,8 +135,36 @@ class GameApp {
     // Storage & Leaderboard System (@designer & @qa)
     this.storageSystem = new StorageSystem();
     this.activeDifficulty = 'outbreak';
+    this.activeGameMode = 'endless';
+    this.timeAttackTimer = 0;
     this.gameTime = 0;
     this.peakHorde = 1;
+    this.usedEnhancements = false;
+    this.leaderboardActiveMode = 'endless';
+
+    // Game Mode & Time Attack UI
+    this.hudTimeAttackEl = document.getElementById('hud-time-attack');
+    this.hudTimeAttackVal = document.getElementById('hud-time-attack-val');
+    this.modePills = document.querySelectorAll('.mode-pill');
+
+    // Safe Zone Deposit Channeling Widget
+    this.safeZoneWidgetEl = document.getElementById('safezone-channel-widget');
+    this.safeZoneBarEl = document.getElementById('safezone-channel-bar');
+    this.safeZoneCountdownEl = document.getElementById('safezone-channel-countdown');
+
+    // Mutation Lab Meta-Progression Modal
+    this.menuBankedZombiesEl = document.getElementById('menu-banked-zombies');
+    this.btnMenuLab = document.getElementById('btn-menu-lab');
+    this.labModalEl = document.getElementById('lab-modal');
+    this.labBalanceEl = document.getElementById('lab-banked-balance') || document.getElementById('lab-banked-count');
+    this.labGridEl = document.getElementById('lab-enhancements-grid');
+    this.btnCloseLab = document.getElementById('btn-close-lab');
+    this.btnCloseLabFooter = document.getElementById('btn-close-lab-footer');
+    this.gameoverModeTabs = document.getElementById('gameover-mode-tabs');
+    this.standaloneModeTabs = document.getElementById('standalone-mode-tabs');
+
+    // Immediately sync banked zombies counter on game boot / main menu load
+    this._updateBankedZombiesUI();
 
     // Retro Arcade Initials Tumbler State (@artist & @designer)
     this.tumblerModalEl = document.getElementById('initials-modal');
@@ -297,17 +326,23 @@ class GameApp {
     this.renderer3D = new InstancedRenderer(this.scene, 1200);
     this.entityManager = new EntityManager(Infinity);
     this.entityManager.cityStreamer = this.cityStreamer;
+    this.cityStreamer.entityManager = this.entityManager;
+    this.entityManager.storageSystem = this.storageSystem;
     this.entityManager.scene = this.scene;
     this.entityManager.particles = this.particles;
 
-    // Connect procedural quarantine chunk streaming to entity garrison lifecycle
+    // Connect procedural quarantine and safe zone chunk streaming to entity lifecycle
     this.cityStreamer.onChunkLoaded = (chunk) => {
       if (chunk.isQuarantineZone) {
         this.entityManager.registerQuarantineZone(chunk);
       }
+      if (chunk.isSafeZone) {
+        this.entityManager.registerSafeZone(chunk);
+      }
     };
     this.cityStreamer.onChunkUnloaded = (chunkKey) => {
       this.entityManager.unregisterQuarantineZone(chunkKey);
+      this.entityManager.unregisterSafeZone(chunkKey);
     };
 
     this.cityStreamer.init(0, 0, this.spatialGrid);
@@ -534,11 +569,17 @@ class GameApp {
       this.audioSystem.playPowerupCollect();
       this._triggerVignetteFlash();
       this.inputController.vibrate(60);
-      const name = powerup?.type?.name || 'POWER-UP';
-      this._showToast(`⚡ ${name.toUpperCase()} ACTIVATED!`);
-      if (powerup) {
-        this._showFloatingText(name.toUpperCase(), powerup.x, powerup.z, 'fct-powerup');
-      }
+      const typeId = typeof powerup === 'string' ? powerup : (powerup?.type?.id || powerup?.typeId);
+      const label = (typeof powerup === 'object' && powerup?.type?.label) || (typeof powerup === 'object' && powerup?.type?.name) || typeId || 'POWER-UP';
+      this._showToast(`⚡ ${label.toUpperCase()} ACTIVATED!`);
+      const px = typeof powerup === 'object' ? (powerup.x || 0) : 0;
+      const pz = typeof powerup === 'object' ? (powerup.z || 0) : 0;
+      this._showFloatingText(label.toUpperCase(), px, pz, 'fct-powerup');
+      this._syncPanicHUD();
+    };
+
+    this.entityManager.onPanicChanged = (newPanicLevel) => {
+      this._syncPanicHUD();
     };
 
     this.entityManager.onInfection = (x, z, totalZombies) => {
@@ -710,12 +751,21 @@ class GameApp {
         this.mistWidgetEl.classList.add('hidden');
       }
 
-      const finalScore = this.entityManager.score || 0;
+      const baseScore = this.entityManager.score || 0;
+      let modeMult = 1.0;
+      if (this.activeGameMode === 'time_attack_2') modeMult = 1.25;
+      else if (this.activeGameMode === 'time_attack_5') modeMult = 1.50;
+      else if (this.activeGameMode === 'time_attack_10') modeMult = 2.00;
+
+      const finalScore = Math.round(baseScore * (reason === 'TIME_ATTACK_SURVIVED' ? modeMult : 1.0));
       const finalHorde = Math.max(this.peakHorde, this.entityManager.zombies.length + (this.entityManager.patientZero ? 1 : 0));
       const finalTimeStr = this.storageSystem.formatTime(this.gameTime);
 
       if (this.gameOverReasonEl) {
-        if (reason === 'QUARANTINED!') {
+        if (reason === 'TIME_ATTACK_SURVIVED') {
+          const bonusPct = Math.round((modeMult - 1.0) * 100);
+          this.gameOverReasonEl.textContent = `TIME'S UP! OPERATION COMPLETED! (+${bonusPct}% SURVIVAL BONUS)`;
+        } else if (reason === 'QUARANTINED!') {
           this.gameOverReasonEl.textContent = 'QUARANTINED BY HAZMAT CHEMICAL SPRAY!';
         } else if (reason === 'SNIPED_ALONE') {
           this.gameOverReasonEl.textContent = 'SNIPED WHILE ALONE! The lone carrier was eliminated!';
@@ -735,8 +785,8 @@ class GameApp {
         this.goFinalTimeEl.textContent = finalTimeStr;
       }
 
-      // Check if player qualifies for Top 5 High Score
-      if (this.storageSystem.isHighScore(finalScore, this.activeDifficulty)) {
+      // Check if player qualifies for Top 5 High Score in active game mode
+      if (this.storageSystem.isHighScore(finalScore, this.activeDifficulty, this.activeGameMode)) {
         this.gameState = 'STATE_INITIALS_ENTRY';
         this._openInitialsModal(finalScore, finalHorde, finalTimeStr);
       } else {
@@ -883,6 +933,31 @@ class GameApp {
     // Roguelite Mutation Modal Callback (@designer)
     this.entityManager.onShowMutationModal = () => {
       this._openMutationModal();
+    };
+
+    // Safe Zone Channeling & Deposit Callbacks (@designer, @artist & @qa)
+    this.entityManager.onSafeZoneProgress = (isChanneling, progress, remainingTime) => {
+      if (!this.safeZoneWidgetEl) return;
+      if (isChanneling) {
+        this.safeZoneWidgetEl.classList.remove('hidden');
+        if (this.safeZoneBarEl) {
+          this.safeZoneBarEl.style.width = `${Math.round(progress * 100)}%`;
+        }
+        if (this.safeZoneCountdownEl) {
+          this.safeZoneCountdownEl.textContent = `${remainingTime.toFixed(1)}s`;
+        }
+      } else {
+        this.safeZoneWidgetEl.classList.add('hidden');
+      }
+    };
+
+    this.entityManager.onSafeZoneDeposit = (count, pointsAwarded) => {
+      this._updateBankedZombiesUI();
+      if (this.audioSystem && this.audioSystem.playPowerup) {
+        this.audioSystem.playPowerup();
+      }
+      this._showStageBanner(`🛡️ +${count} ZOMBIES BANKED! (+${pointsAwarded.toLocaleString()} PTS)`);
+      this._showToast(`🛡️ +${count} SPECIMENS SECURED IN SAFE REFUGE!`);
     };
   }
 
@@ -1169,8 +1244,8 @@ class GameApp {
     }
     this.debrisList = [];
 
-    this.cityStreamer.init(0, 0, this.spatialGrid);
     this.entityManager.init(50);
+    this.cityStreamer.init(0, 0, this.spatialGrid);
     this.entityManager.score = 0;
     this.entityManager.speedSurgeTimer = 0;
     this.entityManager.meatMagnetTimer = 0;
@@ -1209,14 +1284,46 @@ class GameApp {
     this._showToast('SIMULATION RESET');
   }
 
-  startGame(difficulty = this.activeDifficulty) {
+  startGame(difficulty = this.activeDifficulty, mode = this.activeGameMode) {
     this.activeDifficulty = difficulty;
+    this.activeGameMode = mode;
     if (this.storageSystem) {
       this.storageSystem.activeDifficulty = difficulty;
     }
     if (this.trafficManager) {
       this.trafficManager.setDifficulty(difficulty);
     }
+
+    // Apply Mutation Lab enhancement buffs (@designer & @qa)
+    const enhancements = this.storageSystem.getEnhancements().active;
+    this.entityManager.applyEnhancementBuffs(enhancements);
+    this.usedEnhancements = this.storageSystem.isEnhancementsUsed();
+
+    // Time Attack setup
+    const MODE_DURATIONS = {
+      endless: Infinity,
+      time_attack_2: 120,
+      time_attack_5: 300,
+      time_attack_10: 600,
+    };
+    if (this.activeGameMode !== 'endless') {
+      this.timeAttackTimer = MODE_DURATIONS[this.activeGameMode] || 120;
+      if (this.hudTimeAttackEl) {
+        this.hudTimeAttackEl.classList.remove('hidden');
+      }
+      if (this.hudTimeAttackVal) {
+        const mins = Math.floor(this.timeAttackTimer / 60);
+        const secs = Math.floor(this.timeAttackTimer % 60);
+        this.hudTimeAttackVal.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+        this.hudTimeAttackVal.classList.remove('critical');
+      }
+    } else {
+      this.timeAttackTimer = 0;
+      if (this.hudTimeAttackEl) {
+        this.hudTimeAttackEl.classList.add('hidden');
+      }
+    }
+
     this._restartGame();
     this.audioSystem.start();
   }
@@ -1254,6 +1361,12 @@ class GameApp {
     if (this.mistWidgetEl) {
       this.mistWidgetEl.classList.add('hidden');
     }
+    if (this.hudTimeAttackEl) {
+      this.hudTimeAttackEl.classList.add('hidden');
+    }
+    if (this.safeZoneWidgetEl) {
+      this.safeZoneWidgetEl.classList.add('hidden');
+    }
     if (this.sprayDangerOverlayEl) {
       this.sprayDangerOverlayEl.style.opacity = '0';
     }
@@ -1280,10 +1393,135 @@ class GameApp {
       this.mainMenuOverlayEl.style.display = 'flex';
       this.mainMenuOverlayEl.classList.remove('hidden');
     }
+    this._updateBankedZombiesUI();
     this._updateHUD(0);
   }
 
+  _updateBankedZombiesUI() {
+    let banked = 0;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('zombie_chase_bank');
+        if (stored !== null && stored !== undefined) {
+          banked = parseInt(stored, 10) || 0;
+        } else if (this.storageSystem) {
+          banked = this.storageSystem.getBankedZombies();
+        }
+      } else if (this.storageSystem) {
+        banked = this.storageSystem.getBankedZombies();
+      }
+    } catch (e) {
+      banked = this.storageSystem ? this.storageSystem.getBankedZombies() : 0;
+    }
+
+    if (this.menuBankedZombiesEl) {
+      this.menuBankedZombiesEl.textContent = banked.toLocaleString();
+    }
+    if (this.labBalanceEl) {
+      this.labBalanceEl.textContent = banked.toLocaleString();
+    }
+  }
+
+  _openLabModal() {
+    if (!this.labModalEl) return;
+    this.labModalEl.style.display = 'flex';
+    this.labModalEl.classList.remove('hidden');
+    this._updateBankedZombiesUI();
+    this._renderLabCards();
+  }
+
+  _closeLabModal() {
+    if (!this.labModalEl) return;
+    this.labModalEl.style.display = 'none';
+    this.labModalEl.classList.add('hidden');
+  }
+
+  _renderLabCards() {
+    if (!this.labGridEl) return;
+    const enhancements = this.storageSystem.getEnhancements();
+    const banked = this.storageSystem.getBankedZombies();
+
+    const defs = [
+      ENHANCEMENT_DEFS.titanDuration,
+      ENHANCEMENT_DEFS.swarmSpeed,
+      ENHANCEMENT_DEFS.civilianPheromone,
+      ENHANCEMENT_DEFS.thickSkulls,
+    ];
+
+    this.labGridEl.innerHTML = defs.map((def) => {
+      const isUnlocked = !!enhancements.unlocked[def.id];
+      const isActive = !!enhancements.active[def.id];
+      const canAfford = banked >= def.cost;
+
+      let actionHtml = '';
+      if (!isUnlocked) {
+        actionHtml = `
+          <button class="lab-btn-unlock" data-id="${def.id}" ${canAfford ? '' : 'disabled'}>
+            UNLOCK (${def.cost} 🧟)
+          </button>
+        `;
+      } else {
+        actionHtml = `
+          <button class="lab-toggle-btn ${isActive ? 'active' : 'inactive'}" data-id="${def.id}">
+            ${isActive ? 'ACTIVE ✓' : 'EQUIP'}
+          </button>
+        `;
+      }
+
+      return `
+        <div class="lab-card-item ${isUnlocked ? 'unlocked' : 'locked'} ${isActive ? 'equipped' : ''}">
+          <div class="lab-item-header">
+            <span class="lab-item-icon">${def.icon}</span>
+            <div class="lab-item-title-group">
+              <h4 class="lab-item-title">${def.name}</h4>
+              <span class="lab-item-cost">${isUnlocked ? 'UNLOCKED' : `${def.cost} 🧟`}</span>
+            </div>
+          </div>
+          <p class="lab-item-desc">${def.desc}</p>
+          <div class="lab-item-action">
+            ${actionHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Wire action buttons
+    this.labGridEl.querySelectorAll('.lab-btn-unlock').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.dataset.id;
+        if (this.storageSystem.unlockEnhancement(id)) {
+          if (this.audioSystem && this.audioSystem.playPowerup) {
+            this.audioSystem.playPowerup();
+          }
+          this._updateBankedZombiesUI();
+          this._renderLabCards();
+        }
+      });
+    });
+
+    this.labGridEl.querySelectorAll('.lab-toggle-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.dataset.id;
+        this.storageSystem.toggleEnhancement(id);
+        if (this.audioSystem && this.audioSystem.playTumblerClick) {
+          this.audioSystem.playTumblerClick();
+        }
+        this._renderLabCards();
+      });
+    });
+  }
+
   _setupMainMenu() {
+    if (this.modePills) {
+      this.modePills.forEach(pill => {
+        pill.addEventListener('click', () => {
+          this.modePills.forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          this.activeGameMode = pill.dataset.mode || 'endless';
+        });
+      });
+    }
+
     if (this.diffPills) {
       this.diffPills.forEach(pill => {
         pill.addEventListener('click', () => {
@@ -1301,13 +1539,31 @@ class GameApp {
 
     if (this.btnStartGame) {
       this.btnStartGame.addEventListener('click', () => {
-        this.startGame(this.activeDifficulty);
+        this.startGame(this.activeDifficulty, this.activeGameMode);
       });
     }
 
     if (this.btnMenuLeaderboard) {
       this.btnMenuLeaderboard.addEventListener('click', () => {
         this._openStandaloneLeaderboard();
+      });
+    }
+
+    if (this.btnMenuLab) {
+      this.btnMenuLab.addEventListener('click', () => {
+        this._openLabModal();
+      });
+    }
+
+    if (this.btnCloseLab) {
+      this.btnCloseLab.addEventListener('click', () => {
+        this._closeLabModal();
+      });
+    }
+
+    if (this.btnCloseLabFooter) {
+      this.btnCloseLabFooter.addEventListener('click', () => {
+        this._closeLabModal();
       });
     }
 
@@ -1669,10 +1925,36 @@ class GameApp {
         this._closeStandaloneLeaderboard();
       });
     }
+
+    // Leaderboard Game Mode Partition Tabs (@designer & @qa)
+    this._setupLeaderboardTabs('gameover-mode-tabs', this.leaderboardRowsEl);
+    this._setupLeaderboardTabs('standalone-mode-tabs', this.standaloneLeaderboardRowsEl);
+  }
+
+  _setupLeaderboardTabs(containerId, targetTbody) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const tabs = container.querySelectorAll('.lead-tab');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        const mode = tab.dataset.mode || 'endless';
+        this.leaderboardActiveMode = mode;
+        this._renderLeaderboard(targetTbody, null, mode);
+      });
+    });
   }
 
   _openInitialsModal(score, peakHorde, timeSurvived) {
-    this._pendingHighScoreData = { score, peakHorde, timeSurvived, difficulty: this.activeDifficulty };
+    this._pendingHighScoreData = {
+      score,
+      peakHorde,
+      timeSurvived,
+      difficulty: this.activeDifficulty,
+      mode: this.activeGameMode,
+      enhancementsUsed: this.usedEnhancements
+    };
     this.isEnteringInitials = true;
     this.tumblerChars = ['A', 'A', 'A'];
     this.activeTumblerSlot = 0;
@@ -1682,7 +1964,7 @@ class GameApp {
     if (this.initialsScorePreviewEl) {
       this.initialsScorePreviewEl.textContent = score.toLocaleString();
     }
-    const currentScores = this.storageSystem.getScores(this.activeDifficulty);
+    const currentScores = this.storageSystem.getScores(this.activeDifficulty, this.activeGameMode);
     let previewRank = 1;
     for (let i = 0; i < currentScores.length; i++) {
       if (score <= currentScores[i].score) {
@@ -1747,6 +2029,7 @@ class GameApp {
   _advanceTumblerSlot() {
     if (this.activeTumblerSlot < 2) {
       this._setTumblerSlot(this.activeTumblerSlot + 1);
+      this.audioSystem.playTumblerClick();
     } else {
       this._submitInitials();
     }
@@ -1767,6 +2050,8 @@ class GameApp {
       peakHorde: this._pendingHighScoreData.peakHorde,
       timeSurvived: this._pendingHighScoreData.timeSurvived,
       difficulty: this._pendingHighScoreData.difficulty,
+      mode: this._pendingHighScoreData.mode || 'endless',
+      enhancementsUsed: !!this._pendingHighScoreData.enhancementsUsed,
     });
     this.audioSystem.playInitialsSubmit();
     this._closeInitialsModal();
@@ -1778,14 +2063,25 @@ class GameApp {
       this.gameOverModalEl.style.display = 'flex';
       this.gameOverModalEl.classList.remove('hidden');
     }
-    this._renderLeaderboard(this.leaderboardRowsEl, highlightRank);
+    this.leaderboardActiveMode = this.activeGameMode || 'endless';
+    if (this.gameoverModeTabs) {
+      this.gameoverModeTabs.querySelectorAll('.lead-tab').forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.mode === this.leaderboardActiveMode);
+      });
+    }
+    this._renderLeaderboard(this.leaderboardRowsEl, highlightRank, this.leaderboardActiveMode);
   }
 
   _openStandaloneLeaderboard() {
     if (this.standaloneLeaderboardModalEl) {
       this.standaloneLeaderboardModalEl.style.display = 'flex';
       this.standaloneLeaderboardModalEl.classList.remove('hidden');
-      this._renderLeaderboard(this.standaloneLeaderboardRowsEl, null);
+      if (this.standaloneModeTabs) {
+        this.standaloneModeTabs.querySelectorAll('.lead-tab').forEach((tab) => {
+          tab.classList.toggle('active', tab.dataset.mode === this.leaderboardActiveMode);
+        });
+      }
+      this._renderLeaderboard(this.standaloneLeaderboardRowsEl, null, this.leaderboardActiveMode);
     }
   }
 
@@ -1796,18 +2092,20 @@ class GameApp {
     }
   }
 
-  _renderLeaderboard(targetTbody, highlightRank = null) {
+  _renderLeaderboard(targetTbody, highlightRank = null, mode = null) {
     if (!targetTbody) return;
-    const scores = this.storageSystem.getScores(this.activeDifficulty);
+    const activeMode = mode || this.leaderboardActiveMode || 'endless';
+    const scores = this.storageSystem.getScores(this.activeDifficulty, activeMode);
     const medals = ['🥇 1', '🥈 2', '🥉 3', '4', '5'];
     targetTbody.innerHTML = scores.map((item, idx) => {
       const rank = idx + 1;
       const isNew = highlightRank === rank;
       const medalStr = medals[idx] || `${rank}`;
+      const dnaBadge = item.enhancementsUsed ? '<span class="enhancement-dna-badge" title="Enhanced Run">🧬</span>' : '';
       return `
         <tr class="${isNew ? 'row-new' : ''}">
           <td class="rank-cell rank-${rank}">${medalStr}</td>
-          <td class="tag-cell">${item.initials}</td>
+          <td class="tag-cell">${item.initials} ${dnaBadge}</td>
           <td class="score-cell">${item.score.toLocaleString()}</td>
           <td>${item.peakHorde}</td>
           <td>${item.timeSurvived}</td>
@@ -1857,6 +2155,25 @@ class GameApp {
       const curHorde = this.entityManager.zombies.length + 1;
       if (curHorde > this.peakHorde) {
         this.peakHorde = curHorde;
+      }
+
+      // Time Attack countdown timer (@designer)
+      if (this.activeGameMode !== 'endless' && this.timeAttackTimer > 0) {
+        this.timeAttackTimer = Math.max(0, this.timeAttackTimer - dt);
+        if (this.hudTimeAttackVal) {
+          const mins = Math.floor(this.timeAttackTimer / 60);
+          const secs = Math.floor(this.timeAttackTimer % 60);
+          this.hudTimeAttackVal.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+          if (this.timeAttackTimer <= 10) {
+            this.hudTimeAttackVal.classList.add('critical');
+          } else {
+            this.hudTimeAttackVal.classList.remove('critical');
+          }
+        }
+        if (this.timeAttackTimer <= 0) {
+          this.timeAttackTimer = 0;
+          this.entityManager.onGameOver('TIME_ATTACK_SURVIVED');
+        }
       }
     }
 
@@ -2078,30 +2395,61 @@ class GameApp {
   }
 
   /**
-   * Casts ray from camera to Patient Zero and fades occluding building meshes to translucent
+   * Casts rays from camera to Patient Zero and surrounding horde members,
+   * fading occluding building meshes to translucent (0.20 opacity) with depthWrite = false
+   * for crystal-clear see-through visibility.
    */
   _updateBuildingOcclusion(pz, dt) {
     if (!pz || !this.camera || !this.cityStreamer) return;
 
-    // Line of sight ray: from camera toward Patient Zero chest level (1.2m)
-    this.rayTarget.set(pz.x, 1.2, pz.z);
-    this.rayDir.subVectors(this.rayTarget, this.camera.position);
-    const distToPz = this.rayDir.length();
-    if (distToPz < 0.2) return;
-
-    this.rayDir.normalize();
-    this.occlusionRaycaster.set(this.camera.position, this.rayDir);
-    this.occlusionRaycaster.near = 0.5;
-    this.occlusionRaycaster.far = Math.max(0.5, distToPz - 0.2);
-
     const buildingMeshes = this.cityStreamer.getActiveBuildingMeshes();
-    const intersects = this.occlusionRaycaster.intersectObjects(buildingMeshes, false);
+    if (!buildingMeshes || buildingMeshes.length === 0) return;
 
     const currentOccluders = new Set();
-    for (let i = 0; i < intersects.length; i++) {
-      const obj = intersects[i].object;
-      if (obj && obj.material) {
-        currentOccluders.add(obj);
+    const camPos = this.camera.position;
+
+    // Build list of critical visibility target points:
+    // 1. Patient Zero center chest
+    // 2. Patient Zero elevated head (especially in Titan mode)
+    // 3. Left/Right flanks around Patient Zero
+    // 4. Sampled horde followers (if any)
+    const targets = [
+      { x: pz.x, y: 1.2, z: pz.z },
+      { x: pz.x, y: this.entityManager && this.entityManager.isTitan ? 2.8 : 1.7, z: pz.z },
+      { x: pz.x - 1.5, y: 1.2, z: pz.z },
+      { x: pz.x + 1.5, y: 1.2, z: pz.z },
+    ];
+
+    const horde = this.entityManager ? this.entityManager.zombies : null;
+    if (horde && horde.length > 0) {
+      // Sample nearest and rear swarm members to ensure horde isn't hidden behind building facades
+      targets.push({ x: horde[0].x, y: 1.0, z: horde[0].z });
+      if (horde.length > 3) {
+        targets.push({ x: horde[Math.floor(horde.length * 0.5)].x, y: 1.0, z: horde[Math.floor(horde.length * 0.5)].z });
+      }
+      if (horde.length > 8) {
+        targets.push({ x: horde[horde.length - 1].x, y: 1.0, z: horde[horde.length - 1].z });
+      }
+    }
+
+    for (let t = 0; t < targets.length; t++) {
+      const tgt = targets[t];
+      this.rayTarget.set(tgt.x, tgt.y, tgt.z);
+      this.rayDir.subVectors(this.rayTarget, camPos);
+      const dist = this.rayDir.length();
+      if (dist < 0.3) continue;
+
+      this.rayDir.normalize();
+      this.occlusionRaycaster.set(camPos, this.rayDir);
+      this.occlusionRaycaster.near = 0.5;
+      this.occlusionRaycaster.far = Math.max(0.5, dist - 0.2);
+
+      const intersects = this.occlusionRaycaster.intersectObjects(buildingMeshes, false);
+      for (let i = 0; i < intersects.length; i++) {
+        const obj = intersects[i].object;
+        if (obj && obj.material) {
+          currentOccluders.add(obj);
+        }
       }
     }
 
@@ -2110,14 +2458,19 @@ class GameApp {
       window.__GAME_STATE__.occludedBuildingsCount = this.occludedBuildingsCount;
     }
 
-    // 1. Fade occluding buildings smoothly toward 0.35 opacity
+    const dtFactor = Math.min(1.0, (dt || 0.016) * 12.0);
+    const restoreFactor = Math.min(1.0, (dt || 0.016) * 8.0);
+
+    // 1. Fade occluding buildings smoothly toward 0.20 opacity with depthWrite = false
     for (const mesh of currentOccluders) {
       const mat = mesh.material;
       if (!mat.transparent) {
         mat.transparent = true;
+        mat.depthWrite = false;
         mat.needsUpdate = true;
       }
-      mat.opacity += (0.35 - mat.opacity) * 0.15;
+      mat.depthWrite = false;
+      mat.opacity += (0.20 - mat.opacity) * dtFactor;
       this.fadedBuildings.add(mesh);
     }
 
@@ -2125,10 +2478,11 @@ class GameApp {
     for (const mesh of this.fadedBuildings) {
       if (!currentOccluders.has(mesh)) {
         const mat = mesh.material;
-        mat.opacity += (1.0 - mat.opacity) * 0.15;
-        if (mat.opacity >= 0.99) {
+        mat.opacity += (1.0 - mat.opacity) * restoreFactor;
+        if (mat.opacity >= 0.98) {
           mat.opacity = 1.0;
           mat.transparent = false;
+          mat.depthWrite = true;
           mat.needsUpdate = true;
           this.fadedBuildings.delete(mesh);
         }
@@ -2151,13 +2505,7 @@ class GameApp {
     if (this.strayCountEl) {
       this.strayCountEl.textContent = this.entityManager.strayZombies ? this.entityManager.strayZombies.length : 0;
     }
-    if (this.panicValEl) {
-      this.panicValEl.textContent = `${Math.round((this.entityManager.panicLevel || 0) * 100)}%`;
-    }
-    if (this.panicBarFill) {
-      const panicPct = Math.min(100, Math.round((this.entityManager.panicLevel || 0) * 100));
-      this.panicBarFill.style.width = `${panicPct}%`;
-    }
+    this._syncPanicHUD();
     if (this.hordeBarFill) {
       const pct = Math.min(100, (hordeSize / Math.max(1, totalUnits)) * 100);
       this.hordeBarFill.style.width = `${pct}%`;
@@ -2228,7 +2576,14 @@ class GameApp {
       window.__GAME_STATE__.peakHorde = this.peakHorde;
       window.__GAME_STATE__.isEnteringInitials = !!this.isEnteringInitials;
       window.__GAME_STATE__.tumblerInitials = this.tumblerChars.join('');
-      window.__GAME_STATE__.activeDifficulty = this.activeDifficulty;
+       window.__GAME_STATE__.activeDifficulty = this.activeDifficulty;
+      window.__GAME_STATE__.activeGameMode = this.activeGameMode;
+      window.__GAME_STATE__.timeAttackTimer = Math.round((this.timeAttackTimer || 0) * 10) / 10;
+      window.__GAME_STATE__.bankedZombies = this.storageSystem ? this.storageSystem.getBankedZombies() : 0;
+      window.__GAME_STATE__.usedEnhancements = !!this.usedEnhancements;
+      window.__GAME_STATE__.activeEnhancements = this.storageSystem ? this.storageSystem.getEnhancements().active : {};
+      window.__GAME_STATE__.isChannelingSafeZone = !!(this.entityManager && this.entityManager.isChannelingSafeZone);
+      window.__GAME_STATE__.safeZoneChannelTimer = this.entityManager ? Math.round((this.entityManager.safeZoneChannelTimer || 0) * 10) / 10 : 0;
       window.__GAME_STATE__.isAloneHunted = !!(this.entityManager && this.entityManager.isAloneHunted);
       window.__GAME_STATE__.aloneTimer = this.entityManager ? Math.round(this.entityManager.aloneTimer * 10) / 10 : 0;
       window.__GAME_STATE__.powerupsActive = this.powerupManager ? this.powerupManager.powerups.length : 0;
@@ -2240,6 +2595,20 @@ class GameApp {
       } else {
         window.__GAME_STATE__.carRecoveryTimer = 0;
       }
+    }
+  }
+
+  _syncPanicHUD() {
+    const panicLevel = this.entityManager ? (this.entityManager.panicLevel || 0) : 0;
+    if (this.panicValEl) {
+      this.panicValEl.textContent = `${Math.round(panicLevel * 100)}%`;
+    }
+    if (this.panicBarFill) {
+      const panicPct = Math.min(100, Math.round(panicLevel * 100));
+      this.panicBarFill.style.width = `${panicPct}%`;
+    }
+    if (typeof window !== 'undefined' && window.__GAME_STATE__) {
+      window.__GAME_STATE__.panicLevel = Math.round(panicLevel * 100) / 100;
     }
   }
 }
