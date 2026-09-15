@@ -55,6 +55,7 @@ export class EntityManager {
     this.onCameraShake = null;        // (intensity, duration)
     this.onStageChanged = null;       // (stage, stageName)
     this.onQuarantineOverrun = null;  // (zone, rewardType)
+    this.onTankFired = null;          // (tankX, tankZ, targetX, targetZ)
 
     // 4-Stage Progressive Difficulty Curve
     this.currentStage = 1;
@@ -186,11 +187,17 @@ export class EntityManager {
       for (const wp of this.waterPuddles) {
         if (wp.mesh) this.scene.remove(wp.mesh);
       }
+      if (this.gasClouds) {
+        for (const gc of this.gasClouds) {
+          if (gc.mesh) this.scene.remove(gc.mesh);
+        }
+      }
     }
     this.helicopters = [];
     this.tanks = [];
     this.acidPuddles = [];
     this.waterPuddles = [];
+    this.gasClouds = [];
 
     this._lastPanicMilestone = 0;
     this.score = 0;
@@ -2520,9 +2527,15 @@ export class EntityManager {
             vz: 0,
             speed: 2.2,
             walkPhase: Math.random() * Math.PI * 2,
-            radius: 0.6,
+            radius: 0.65,
             angle: 0,
-            stunTimer: 0
+            stunTimer: 0,
+            coneLength: 10.0,
+            coneAngleRad: 0.85,
+            sprayActive: true,
+            health: 100,
+            dropY: 0.0,
+            isDropping: false,
           });
         }
       }
@@ -3439,34 +3452,44 @@ export class EntityManager {
   triggerAirstrike(x, z) {
     if (this.particles) {
       this.particles.burstExplosion(x, z);
-      this.particles.burstShockwave(x, z, 8.0);
+      this.particles.burstShockwave(x, z, 9.0);
       if (this.particles.burstCure) this.particles.burstCure(x, z);
-      if (this.particles.burstDustCloud) this.particles.burstDustCloud(x, z, 16);
+      if (this.particles.burstDustCloud) this.particles.burstDustCloud(x, z, 20);
     }
-    if (this.onCameraShake) this.onCameraShake(0.65, 0.7);
+    if (this.onCameraShake) this.onCameraShake(0.85, 0.8);
     if (this.onExplosion) this.onExplosion(x, z);
 
-    // Impact on swarm followers within 6.0m
+    // Impact on swarm followers within 7.5m: decontaminate 4-6 zombies back to civilians
     let decontaminatedCount = 0;
+    const maxFollowersToCure = 5;
     for (let zi = this.zombies.length - 1; zi >= 0; zi--) {
-      const z = this.zombies[zi];
-      const d = Math.hypot(z.x - x, z.z - z);
-      if (d <= 6.0 && decontaminatedCount < 3) {
-        this.decontaminateFollowerZombie(z);
+      const zomb = this.zombies[zi];
+      const d = Math.hypot(zomb.x - x, zomb.z - z);
+      if (d <= 7.5 && decontaminatedCount < maxFollowersToCure) {
+        this.decontaminateFollowerZombie(zomb);
         decontaminatedCount++;
-      } else if (d <= 6.0) {
-        // Knockback
-        z.vx += ((z.x - x) / (d || 1)) * 12.0;
-        z.vz += ((z.z - z) / (d || 1)) * 12.0;
+      } else if (d <= 7.5) {
+        // Violent knockback to surviving followers
+        const force = (1.0 - d / 7.5) * 16.0;
+        zomb.vx += ((zomb.x - x) / (d || 1)) * force;
+        zomb.vz += ((zomb.z - z) / (d || 1)) * force;
       }
     }
 
-    // Impact on Patient Zero
+    // Impact on Patient Zero: concussive shockwave & chemical slow
     if (this.patientZero) {
-      const pzDist = Math.hypot(this.patientZero.x - x, this.patientZero.z - z);
-      if (pzDist <= 6.0 && !this.isSprayInvulnerable) {
+      const pz = this.patientZero;
+      const pzDist = Math.hypot(pz.x - x, pz.z - z);
+      if (pzDist <= 7.5 && !this.isSprayInvulnerable) {
+        // Apply concussive knockback
+        const pzForce = (1.0 - pzDist / 7.5) * 10.0;
+        pz.vx += ((pz.x - x) / (pzDist || 1)) * pzForce;
+        pz.vz += ((pz.z - z) / (pzDist || 1)) * pzForce;
+        pz.isSpraySlowed = true;
+
+        // If alone, airstrike delivers devastating Last Stand exposure
         if (this.zombies.length === 0) {
-          this.pzSprayTime = (this.pzSprayTime || 0) + 1.8;
+          this.pzSprayTime = (this.pzSprayTime || 0) + 2.0;
           if (this.pzSprayTime >= 3.5 && this.onGameOver) {
             this.onGameOver('AIRSTRIKE_ELIMINATED');
           }
@@ -3474,8 +3497,11 @@ export class EntityManager {
       }
     }
 
+    // Spawn lingering toxic chemical gas decontamination zone (6.5s)
+    this.spawnGasCloud(x, z, 5.5, 6.5);
+
     if (this.onPanicEscalation) {
-      this.onPanicEscalation('⚠️ AIRSTRIKE DETONATED! GAS BOMB SCATTERS HORDE!');
+      this.onPanicEscalation('⚠️ AIRSTRIKE DETONATED! TOXIC GAS BOMB SCATTERS HORDE!');
     }
   }
 
@@ -3608,10 +3634,10 @@ export class EntityManager {
         t.meshData.group.rotation.y = t.angle;
       }
 
-      // Tank Shell Firing
+      // Tank Shell Firing (calibrated 3.8s cooldown for high tactical urgency)
       t.fireCooldown -= dt;
       if (t.fireCooldown <= 0 && dist <= 35.0) {
-        t.fireCooldown = 4.5;
+        t.fireCooldown = 3.8;
         this.fireTankShell(t, pz.x, pz.z);
       }
     }
@@ -3644,19 +3670,26 @@ export class EntityManager {
       this.particles.burstSparks(tank.x, tank.z, 15);
     }
 
-    // Impact explosion at target
+    // Heavy impact explosion & blast shockwave at target
     if (this.particles) {
       this.particles.burstExplosion(targetX, targetZ);
-      this.particles.burstShockwave(targetX, targetZ, 6.0);
+      this.particles.burstShockwave(targetX, targetZ, 8.0);
+      if (this.particles.burstDustCloud) this.particles.burstDustCloud(targetX, targetZ, 16);
     }
-    if (this.onCameraShake) this.onCameraShake(0.5, 0.5);
+    if (this.onCameraShake) this.onCameraShake(0.75, 0.65);
+    if (this.onTankFired) {
+      this.onTankFired(tank.x, tank.z, targetX, targetZ);
+    } else if (this.onExplosion) {
+      this.onExplosion(targetX, targetZ);
+    }
 
-    // If player is in Phalanx formation, the dense meat-shield absorbs the blast!
+    // If player is in Phalanx formation, the dense shield-wall absorbs the shell!
+    // Absorbs shockwave and limits losses to 2-3 vanguard zombies instead of widespread devastation.
     if (this.isPhalanx && this.zombies.length > 0) {
       let decontam = 0;
       for (let zi = this.zombies.length - 1; zi >= 0; zi--) {
         const z = this.zombies[zi];
-        if (Math.hypot(z.x - targetX, z.z - targetZ) <= 4.5 && decontam < 2) {
+        if (Math.hypot(z.x - targetX, z.z - targetZ) <= 5.0 && decontam < 2) {
           this.decontaminateFollowerZombie(z);
           decontam++;
         }
@@ -3665,14 +3698,43 @@ export class EntityManager {
         this.onPanicEscalation('🛡️ PHALANX MEAT-SHIELD BLOCKED TANK SHELL!');
       }
     } else {
-      // Scatter horde members outward with force
-      for (let zi = 0; zi < this.zombies.length; zi++) {
+      // Direct high-explosive impact: Decontaminates 3-5 horde followers within 5.5m blast radius!
+      let decontam = 0;
+      const maxShellKills = 4;
+      for (let zi = this.zombies.length - 1; zi >= 0; zi--) {
         const z = this.zombies[zi];
         const d = Math.hypot(z.x - targetX, z.z - targetZ);
-        if (d <= 5.5) {
-          const force = (1.0 - d / 5.5) * 14.0;
+        if (d <= 5.5 && decontam < maxShellKills) {
+          this.decontaminateFollowerZombie(z);
+          decontam++;
+        } else if (d <= 6.5) {
+          // Violent outward shockwave hurling survivors back
+          const force = (1.0 - d / 6.5) * 18.0;
           z.vx += ((z.x - targetX) / (d || 1)) * force;
           z.vz += ((z.z - targetZ) / (d || 1)) * force;
+        }
+      }
+
+      if (this.onPanicEscalation && decontam > 0) {
+        this.onPanicEscalation('💥 TANK SHELL DIRECT HIT! SWARM BLASTED!');
+      }
+    }
+
+    // Impact on Patient Zero: Concussive stun, slow, and Last Stand exposure if alone
+    if (this.patientZero) {
+      const pz = this.patientZero;
+      const pzDist = Math.hypot(pz.x - targetX, pz.z - targetZ);
+      if (pzDist <= 5.5 && !this.isSprayInvulnerable) {
+        const pzForce = (1.0 - pzDist / 5.5) * 12.0;
+        pz.vx += ((pz.x - targetX) / (pzDist || 1)) * pzForce;
+        pz.vz += ((pz.z - targetZ) / (pzDist || 1)) * pzForce;
+        pz.isSpraySlowed = true; // 50% concussive slow
+
+        if (this.zombies.length === 0) {
+          this.pzSprayTime = (this.pzSprayTime || 0) + 1.8;
+          if (this.pzSprayTime >= 3.5 && this.onGameOver) {
+            this.onGameOver('HORDE_WIPED_OUT');
+          }
         }
       }
     }
@@ -3830,6 +3892,97 @@ export class EntityManager {
           }
         }
       }
+    }
+
+    // 3. Chemical Gas Clouds (spawned from Helicopter Airstrikes)
+    if (this.gasClouds && this.gasClouds.length > 0) {
+      const pz = this.patientZero;
+      const activeCureThreshold = this.followerCureThreshold || 0.55;
+
+      for (let i = this.gasClouds.length - 1; i >= 0; i--) {
+        const gc = this.gasClouds[i];
+        gc.life -= dt;
+        if (gc.life <= 0) {
+          if (this.scene && gc.mesh) this.scene.remove(gc.mesh);
+          this.gasClouds.splice(i, 1);
+          continue;
+        }
+
+        // Pulse gas cloud visual opacity & gentle expansion
+        if (gc.mat) {
+          gc.mat.opacity = 0.35 + Math.sin((gc.initialLife - gc.life) * 5.0) * 0.12;
+        }
+
+        // Emit light chemical gas / cure particles
+        if (this.particles && Math.random() < 0.25) {
+          if (this.particles.burstCure) {
+            this.particles.burstCure(gc.x + (Math.random() - 0.5) * gc.radius, gc.z + (Math.random() - 0.5) * gc.radius);
+          }
+        }
+
+        // A. Threat to Horde: Cures zombies standing or moving through the lingering chemical cloud
+        for (let zi = this.zombies.length - 1; zi >= 0; zi--) {
+          const z = this.zombies[zi];
+          if (Math.hypot(z.x - gc.x, z.z - gc.z) <= gc.radius) {
+            z.sprayExposure = (z.sprayExposure || 0) + dt * 1.5;
+            if (this.onHazmatDamageDealt) {
+              this.onHazmatDamageDealt(dt * 0.5);
+            }
+            if (z.sprayExposure >= activeCureThreshold) {
+              this.cureZombieToCivilian(zi);
+            }
+          }
+        }
+
+        // B. Threat to Patient Zero: Applies chemical slow & Last Stand exposure if alone
+        if (pz && Math.hypot(pz.x - gc.x, pz.z - gc.z) <= gc.radius && !this.isSprayInvulnerable) {
+          pz.isSpraySlowed = true;
+          if (this.zombies.length === 0) {
+            this.pzSprayTime = Math.min(3.5, (this.pzSprayTime || 0) + dt * 1.2);
+            if (this.pzSprayTime >= 3.5 && this.onGameOver) {
+              this.onGameOver('QUARANTINED!');
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Spawn a lingering toxic chemical decontamination gas cloud on the ground
+   * (e.g. from Helicopter airstrikes) that persists for 6.0s.
+   */
+  spawnGasCloud(x, z, radius = 5.5, life = 6.0) {
+    if (!this.gasClouds) this.gasClouds = [];
+
+    let mesh = null;
+    let mat = null;
+    if (typeof THREE !== 'undefined' && THREE.CircleGeometry && THREE.MeshBasicMaterial) {
+      const geom = new THREE.CircleGeometry(radius, 22);
+      geom.rotateX(-Math.PI / 2);
+      mat = new THREE.MeshBasicMaterial({
+        color: 0x34d399, // Emerald cyan chemical agent
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+      });
+      mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set(x, 0.05, z);
+      if (this.scene) this.scene.add(mesh);
+    }
+
+    this.gasClouds.push({
+      x,
+      z,
+      radius,
+      life,
+      initialLife: life,
+      mesh,
+      mat,
+    });
+
+    if (this.particles && this.particles.burstDustCloud) {
+      this.particles.burstDustCloud(x, z, 14);
     }
   }
 }

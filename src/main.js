@@ -565,6 +565,7 @@ class GameApp {
     // Powerup Events
     this.powerupManager.entityManager = this.entityManager;
     this.powerupManager.cityStreamer = this.cityStreamer;
+    this.powerupManager.spatialGrid = this.spatialGrid;
     this.powerupManager.onPowerupCollected = (powerup) => {
       this.audioSystem.playPowerupCollect();
       this._triggerVignetteFlash();
@@ -707,6 +708,17 @@ class GameApp {
       this.cameraController.triggerShake(0.4, 0.7);
       this.particles.burstDustCloud(x, z, 16);
       this._showFloatingText('💥 BOOM!', x, z, 'fct-powerup');
+    };
+
+    // Tank Cannon Fire & Impact
+    this.entityManager.onTankFired = (tankX, tankZ, targetX, targetZ) => {
+      if (this.audioSystem.playTankCannon) {
+        this.audioSystem.playTankCannon();
+      } else {
+        this.audioSystem.playExplosion();
+      }
+      this.cameraController.triggerShake(0.65, 0.6);
+      this._showFloatingText('💥 SHELL INCOMING!', targetX, targetZ, 'fct-combo');
     };
 
     // Horde decontamination spray tracking
@@ -1956,7 +1968,17 @@ class GameApp {
       enhancementsUsed: this.usedEnhancements
     };
     this.isEnteringInitials = true;
-    this.tumblerChars = ['A', 'A', 'A'];
+
+    // QoL: Pre-fill tumblers with last remembered initials if available
+    let remembered = 'AAA';
+    try {
+      const saved = localStorage.getItem('zombie_chase_last_initials');
+      if (saved && saved.length === 3) {
+        remembered = saved.toUpperCase();
+      }
+    } catch (_) {}
+
+    this.tumblerChars = [remembered[0] || 'A', remembered[1] || 'A', remembered[2] || 'A'];
     this.activeTumblerSlot = 0;
     this._updateAllTumblerSlots();
     this._setTumblerSlot(0);
@@ -2044,6 +2066,12 @@ class GameApp {
   _submitInitials() {
     if (!this._pendingHighScoreData) return;
     const initials = this.tumblerChars.join('').trim() || 'PZ0';
+
+    // QoL: Persist submitted initials across games and page refreshes
+    try {
+      localStorage.setItem('zombie_chase_last_initials', initials);
+    } catch (_) {}
+
     const result = this.storageSystem.addScore({
       initials,
       score: this._pendingHighScoreData.score,

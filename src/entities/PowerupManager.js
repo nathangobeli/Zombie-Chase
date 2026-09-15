@@ -46,6 +46,7 @@ export class PowerupManager {
     this.powerups = [];
     this.cityStreamer = null;
     this.entityManager = null;
+    this.spatialGrid = null;
 
     // Group to hold all powerup meshes
     this.group = new THREE.Group();
@@ -99,6 +100,24 @@ export class PowerupManager {
     this.spawnPowerup(6, -26, 'speed_surge');
   }
 
+  /**
+   * Validates that (x, z) does not collide with any static building obstacle bounding box.
+   * Uses a 1.8m clearance radius to keep badges comfortably in the street.
+   */
+  _isValidPowerupPosition(x, z, margin = 1.8) {
+    if (!this.spatialGrid || !this.spatialGrid.obstacles) return true;
+    const obs = this.spatialGrid.obstacles;
+    for (let i = 0; i < obs.length; i++) {
+      const b = obs[i];
+      if (b.disabled || b.isCar) continue; // Parked cars are fine, buildings are not
+      if (x >= b.minX - margin && x <= b.maxX + margin &&
+          z >= b.minZ - margin && z <= b.maxZ + margin) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   update(time, dt, pz) {
     if (!pz) return;
 
@@ -107,22 +126,68 @@ export class PowerupManager {
       this.initStartingPowerups();
     }
 
-    // 1. Spawning Logic: Spawn on roads ahead of the player
+    // 1. Spawning Logic: Spawn on verified driving lanes / streets ahead of the player
     this.spawnTimer += dt;
     if (this.spawnTimer > 7.0 && this.powerups.length < 4 && this.cityStreamer) {
       this.spawnTimer = 0;
-      // Calculate target position 20-45m ahead in player direction
-      const angle = pz.angle || 0;
-      const fwdDist = 20 + Math.random() * 22;
-      const targetX = pz.x + Math.sin(angle) * fwdDist + (Math.random() - 0.5) * 14;
-      const targetZ = pz.z + Math.cos(angle) * fwdDist + (Math.random() - 0.5) * 14;
 
-      const pt = this.cityStreamer.getRandomStreetPoint(targetX, targetZ, 3, 18) ||
-                 this.cityStreamer.getRandomStreetPoint(pz.x, pz.z, 20, 42);
-      if (pt) {
+      let chosenPos = null;
+
+      // Strategy A: Sample from verified open driving lanes (100% road aligned)
+      const drivingLanes = this.cityStreamer.getDrivingLanes ? this.cityStreamer.getDrivingLanes() : [];
+      if (drivingLanes.length > 0) {
+        // Filter or sort lanes ahead of player within 15m - 65m
+        const candidates = [];
+        for (let i = 0; i < drivingLanes.length; i++) {
+          const lane = drivingLanes[i];
+          if (lane.axis === 'z') {
+            const laneDist = Math.hypot(lane.fixedX - pz.x, ((lane.minZ + lane.maxZ) * 0.5) - pz.z);
+            if (laneDist >= 12 && laneDist <= 65) candidates.push(lane);
+          } else {
+            const laneDist = Math.hypot(((lane.minX + lane.maxX) * 0.5) - pz.x, lane.fixedZ - pz.z);
+            if (laneDist >= 12 && laneDist <= 65) candidates.push(lane);
+          }
+        }
+
+        const pool = candidates.length > 0 ? candidates : drivingLanes;
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const lane = pool[Math.floor(Math.random() * pool.length)];
+          let candX, candZ;
+          if (lane.axis === 'z') {
+            candX = lane.fixedX + (Math.random() - 0.5) * 1.5;
+            candZ = lane.minZ + Math.random() * (lane.maxZ - lane.minZ);
+          } else {
+            candX = lane.minX + Math.random() * (lane.maxX - lane.minX);
+            candZ = lane.fixedZ + (Math.random() - 0.5) * 1.5;
+          }
+          if (this._isValidPowerupPosition(candX, candZ)) {
+            chosenPos = { x: candX, z: candZ };
+            break;
+          }
+        }
+      }
+
+      // Strategy B: Fallback to cityStreamer street points, verified against obstacles
+      if (!chosenPos) {
+        const angle = pz.angle || 0;
+        const fwdDist = 20 + Math.random() * 22;
+        const targetX = pz.x + Math.sin(angle) * fwdDist + (Math.random() - 0.5) * 10;
+        const targetZ = pz.z + Math.cos(angle) * fwdDist + (Math.random() - 0.5) * 10;
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const pt = this.cityStreamer.getRandomStreetPoint(targetX, targetZ, 3, 20) ||
+                     this.cityStreamer.getRandomStreetPoint(pz.x, pz.z, 15, 45);
+          if (pt && this._isValidPowerupPosition(pt.x, pt.z)) {
+            chosenPos = pt;
+            break;
+          }
+        }
+      }
+
+      if (chosenPos) {
         // 35% chance to roll Titan Virus so player frequently gets to experience colossal mode
         const forcedType = Math.random() < 0.35 ? 'titan_virus' : null;
-        this.spawnPowerup(pt.x, pt.z, forcedType);
+        this.spawnPowerup(chosenPos.x, chosenPos.z, forcedType);
       }
     }
 

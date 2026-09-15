@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.3] - 2026-09-15 — "Threat Escalation: Devastating Helicopter Airstrikes & Armored Tank Shells"
+
+### Changed — Threat & Impact Escalation (@designer, @artist & @qa)
+- **Helicopter Airstrike & Lingering Chemical Gas Zones** (`EntityManager.js`):
+  - Upgraded airstrike detonation blast radius from 6.0m to 7.5m.
+  - Airstrike now decontaminates 4–5 swarm followers caught in the blast back to civilians, while violently knocking back surviving horde members.
+  - Standing in the spotlight now spawns a lingering **Toxic Chemical Gas Zone** (5.5m radius, 6.5s lifetime) with glowing emerald-cyan visuals and cure particle emissions. Entering or standing in the gas cloud rapidly decontaminates zombies (`cureExposure += dt * 1.5`) and applies a 50% chemical movement slow plus Last Stand quarantine progress to Patient Zero.
+  - Patient Zero caught in the airstrike blast receives concussive shockwave knockback and is immediately slowed (`isSpraySlowed = true`). If alone, Patient Zero incurs +2.0s immediate Last Stand exposure.
+- **Armored Battle Tank High-Explosive Shell Fire** (`EntityManager.js`, `AudioSystem.js`, `main.js`):
+  - Overhauled tank shell detonation mechanics: direct hits outside of Phalanx formation now decontaminate 3–4 swarm followers within a 5.5m radius and hurl surviving horde members back up to 6.5m with outward shockwave force.
+  - Patient Zero caught in a tank shell blast receives concussive knockback, a 50% concussive slow (`isSpraySlowed = true`), camera shake (`0.75`), and Last Stand penalty if alone.
+  - Phalanx Formation tactical counterplay: activating Phalanx (Space / L1) absorbs the high-explosive tank shell blast with the dense vanguard meat-shield, reducing losses to 2 frontline zombies while shielding Patient Zero and the rear horde.
+  - Tightened tank firing cooldown from 4.5s down to 3.8s for sustained tactical threat.
+  - Added procedural sub-bass `playTankCannon()` audio effect in `AudioSystem.js` wired to tank shell firing in `main.js`.
+- **Hazmat Streaming Quota Fix** (`EntityManager.js`):
+  - Fixed streaming hazmat initialization in `updatePopulationStreaming` to include active spray cones (`coneLength: 10.0, coneAngleRad: 0.85, sprayActive: true, health: 100`).
+
+---
+
+## [2.12.2] - 2026-09-15 — "Bug-Fix Sprint: Solid Building Collisions, Roadway Power-Up Spawning & Initials QoL"
+
+### Fixed — Collision Physics & Spawning Accuracy (@designer, @artist & @qa)
+- **Solid Building Collisions & Wall Sliding** (`SpatialGrid.js`, `CityChunk.js`):
+  - Fixed building walk-through bug where commercial storefront breaches previously marked `b.disabled = true;`, permanently collapsing collision for 35% of large buildings.
+  - Storefront breaches now trigger destruction FX and award bonus points while maintaining solid physical collision bounds (`b.disabled` is never set to true for buildings).
+  - Re-architected continuous collision detection (CCD) step resolution in `SpatialGrid.resolveObstacles()` with wall-normal velocity sliding (`vDotN < 0 -> v -= vDotN * n`) and two-pass relaxation per step to prevent tunneling and corner sticking.
+  - Added defensive calculation of `centerX`, `centerZ`, `halfW`, and `halfD` in `SpatialGrid` and explicit registration in `CityChunk.js` for barricades.
+- **Power-Up Roadway Spawning** (`PowerupManager.js`, `main.js`):
+  - Added `_isValidPowerupPosition(x, z, margin)` obstacle-query verification in `PowerupManager` with 1.8m safety clearance against all static building bounding boxes.
+  - Replaced unconstrained random coordinate generation with verified driving lane sampling from `CityStreamer.getDrivingLanes()`, guaranteeing all power-ups spawn cleanly on streets and avenues.
+  - Connected `this.powerupManager.spatialGrid = this.spatialGrid` in `main.js`.
+
+### Added — UI & Quality of Life Polish (@designer & @artist)
+- **High Score Initials QoL Memory** (`main.js`):
+  - Added persistent memory for submitted 3-letter initials via `localStorage.setItem('zombie_chase_last_initials', initials)`.
+  - When the retro arcade high score modal opens, the 3-slot tumbler automatically pre-fills with the player's last entered initials.
+- **Updated "How to Play" Rules Modal** (`index.html`):
+  - Rewrote the `#rules-modal` overlay with 5 comprehensive, styled rule blocks covering v2.0+ gameplay:
+    1. *Game Modes & Steering*: Time Attack vs. Endless Outbreak, Touch/WASD controls, Swarm Squeeze (C/Shift), and Vanguard Transfer (E).
+    2. *Safe Zones & Mutation Lab*: Banking zombies at cyan beacons, purchasing persistent rogue-lite mutations.
+    3. *Threats & Escalating Arsenal*: Hazmat mist cones, military snipers, helicopter spotlight evasion, and battle tanks.
+    4. *Titan Virus & Demolition*: Colossal transformation, smashing vehicles, barricades, and storefronts.
+    5. *Alone & Hunted / Last Stand*: High-tension 10-second survival countdown.
+
+---
+
 ## [2.12.1] - 2026-09-14 — "Bug-Fix Sprint: Banked Zombie Persistence, Quarantine Garrisons & Threat Evasion"
 
 ### Fixed — Meta-Progression, Threat Logic & Visual Polish (@designer, @artist & @qa)

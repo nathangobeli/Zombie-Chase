@@ -530,6 +530,51 @@ export class AudioSystem {
     } catch (e) {}
   }
 
+  /** Deep explosive concussive blast for tank cannon shell fire */
+  playTankCannon() {
+    if (!this._ctx || !this._started) return;
+    try {
+      const t = this._ctx.currentTime;
+      // 1. Heavy sub-bass thump
+      const osc = this._ctx.createOscillator();
+      const env = this._ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(180, t);
+      osc.frequency.exponentialRampToValueAtTime(22, t + 0.65);
+
+      env.gain.setValueAtTime(0.6, t);
+      env.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+
+      osc.connect(env);
+      env.connect(this._masterGain);
+      osc.start(t);
+      osc.stop(t + 0.72);
+
+      // 2. High pressure blast noise
+      const noiseBuffer = this._ctx.createBuffer(1, Math.floor(this._ctx.sampleRate * 0.35), this._ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this._ctx.sampleRate * 0.08));
+      }
+      const noiseSource = this._ctx.createBufferSource();
+      noiseSource.buffer = noiseBuffer;
+
+      const filter = this._ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(600, t);
+      filter.frequency.exponentialRampToValueAtTime(80, t + 0.35);
+
+      const noiseEnv = this._ctx.createGain();
+      noiseEnv.gain.setValueAtTime(0.5, t);
+      noiseEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+
+      noiseSource.connect(filter);
+      filter.connect(noiseEnv);
+      noiseEnv.connect(this._masterGain);
+      noiseSource.start(t);
+    } catch (e) {}
+  }
+
   dispose() {
     if (this._footstepInterval) clearTimeout(this._footstepInterval);
     if (this._ctx) this._ctx.close();

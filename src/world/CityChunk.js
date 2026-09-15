@@ -626,6 +626,10 @@ export class CityChunk {
           maxX: bx + 2.0,
           minZ: bz - 0.45,
           maxZ: bz + 0.45,
+          centerX: bx,
+          centerZ: bz,
+          halfW: 2.0,
+          halfD: 0.45,
           isBarricade: true,
         });
       } else {
@@ -634,6 +638,10 @@ export class CityChunk {
           maxX: bx + 0.45,
           minZ: bz - 2.0,
           maxZ: bz + 2.0,
+          centerX: bx,
+          centerZ: bz,
+          halfW: 0.45,
+          halfD: 2.0,
           isBarricade: true,
         });
       }

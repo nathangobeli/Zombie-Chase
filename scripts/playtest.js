@@ -20,7 +20,7 @@ function probePort(port) {
 
 async function getDevServerUrl() {
   if (process.env.TEST_URL) return process.env.TEST_URL;
-  for (const p of [5176, 5175, 5174, 5173, 5177, 5178]) {
+  for (const p of [5173, 5174, 5175, 5176, 5177, 5178]) {
     if (await probePort(p)) return `http://localhost:${p}`;
   }
   return 'http://localhost:5173';
@@ -1024,6 +1024,32 @@ async function runPlaytest() {
       const tankCountBefore2 = em.tanks.length;
       em._updateTanks(0.016, em.patientZero, app.spatialGrid);
       const tankDestroyedByPhalanx = (em.tanks.length < tankCountBefore2);
+      // 4. Test Helicopter Airstrike & Gas Cloud Threat on Horde
+      const preHeliZCount = 8;
+      const testZombies = [];
+      for (let i = 0; i < preHeliZCount; i++) {
+        testZombies.push({ x: 0.5, z: 0.5, vx: 0, vz: 0, radius: 0.5, id: 9000 + i, type: 'zombie', cureExposure: 0 });
+      }
+      em.zombies = testZombies;
+      const preGasCloudCount = em.gasClouds ? em.gasClouds.length : 0;
+      em.triggerAirstrike(0, 0);
+      const postHeliZCount = em.zombies.length;
+      const heliDecontamSuccess = postHeliZCount < preHeliZCount; // Multiple zombies decontaminated
+      const gasCloudSpawned = em.gasClouds && em.gasClouds.length > preGasCloudCount; // Lingering gas cloud spawned
+
+      // 5. Test Tank Shell Blast Threat on Horde (Non-Phalanx vs Phalanx)
+      const preTankZCount = 6;
+      const tankTestZombies = [];
+      for (let i = 0; i < preTankZCount; i++) {
+        tankTestZombies.push({ x: 1.0, z: 1.0, vx: 0, vz: 0, radius: 0.5, id: 9100 + i, type: 'zombie', cureExposure: 0 });
+      }
+      em.zombies = tankTestZombies;
+      em.isPhalanx = false;
+      const dummyTank = { x: 0, z: -10 };
+      em.fireTankShell(dummyTank, 1.0, 1.0);
+      const postTankZCount = em.zombies.length;
+      const tankDecontamSuccess = postTankZCount < preTankZCount; // High-explosive shell decontaminated zombies
+
       em.zombies = origZombies;
       em.isPhalanx = false;
 
@@ -1033,11 +1059,14 @@ async function runPlaytest() {
         heliY,
         heliSpotlight: !!heliSpotlight,
         airstrikeTriggered,
+        heliDecontamSuccess,
+        gasCloudSpawned,
         hasTank,
         tankTurret: !!tankTurret,
         tankDestroyedByTitan,
         tankDestroyedByPhalanx,
-        success: !!(isRiotVehicle && hasHelicopter && heliY === 18 && airstrikeTriggered && hasTank && tankDestroyedByTitan && tankDestroyedByPhalanx),
+        tankDecontamSuccess,
+        success: !!(isRiotVehicle && hasHelicopter && heliY === 18 && airstrikeTriggered && heliDecontamSuccess && gasCloudSpawned && hasTank && tankDestroyedByTitan && tankDestroyedByPhalanx && tankDecontamSuccess),
       };
     });
     console.log('[Playtest] Advanced Enemies check:', advancedEnemiesCheck);
@@ -1157,7 +1186,7 @@ async function runPlaytest() {
       em._updatePuddles(0.016);
       const civInfectedByToxicWater = (em.zombies.length > zombiesBefore);
 
-      // 4. Commercial Storefront Breached by 20+ horde
+      // 4. Commercial Storefront Breached by 20+ horde (@designer: awards breach FX/points but remains solid!)
       const storefrontObs = {
         minX: 20, maxX: 30, minZ: 20, maxZ: 30,
         centerX: 25, centerZ: 25, halfW: 5, halfD: 5,
@@ -1166,7 +1195,7 @@ async function runPlaytest() {
       sg.obstacles.push(storefrontObs);
       const movingEntity = { x: 25, z: 19.5, radius: 0.6, isTitan: false, hordeCount: 22 };
       sg.resolveObstacles(movingEntity, 0.6);
-      const storefrontBreached = storefrontObs.breached === true && storefrontObs.disabled === true;
+      const storefrontBreached = storefrontObs.breached === true && storefrontObs.disabled !== true;
 
       return {
         waterSpawned,
@@ -1691,6 +1720,122 @@ async function runPlaytest() {
     });
     console.log('[Playtest] Helicopter spotlight evasion & speed limit check:', spotlightEvasionCheck);
 
+    // =========================================================================
+    // BUG-FIX SPRINT VALIDATION CHECKS (@qa & @designer)
+    // 4. Building Solid Sliding: resolveObstacles prevents penetrating building AABB & slides
+    // 5. Power-up Roadway Placement: powerups never spawn inside building obstacles
+    // 6. Initials QoL Memory: submitted initials are stored in localStorage and pre-filled
+    // =========================================================================
+    console.log('[Playtest] Testing Building Solid Collision & Wall Sliding...');
+    const buildingCollisionCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const grid = app.spatialGrid;
+      const buildings = (grid.obstacles || []).filter(o => !o.isCar && !o.disabled);
+      if (buildings.length === 0) {
+        return { success: false, reason: 'No building obstacles in spatial grid' };
+      }
+
+      // Pick a sample building
+      const testBldg = buildings[0];
+      const pzRadius = 0.55;
+
+      // Case A: Try moving straight into the left wall of the building
+      // Start just outside left wall: x = testBldg.minX - 0.2
+      // Attempt target deep inside: x = testBldg.centerX
+      const testEntity = {
+        x: testBldg.centerX,
+        z: testBldg.centerZ,
+        vx: 5.0,
+        vz: 3.0,
+        isTitan: false,
+        hordeCount: 5,
+      };
+
+      // Call resolveObstacles with previous position outside
+      const prevX = testBldg.minX - 0.8;
+      const prevZ = testBldg.centerZ;
+      const col = grid.resolveObstacles(testEntity, pzRadius, true, prevX, prevZ);
+
+      // Verify entity was kept outside the building bounding box
+      const isOutside = testEntity.x <= testBldg.minX || testEntity.x >= testBldg.maxX ||
+                        testEntity.z <= testBldg.minZ || testEntity.z >= testBldg.maxZ;
+      const stoppedAgainstWall = testEntity.x <= testBldg.minX + 0.001;
+      const wallNormalApplied = col && Math.abs(col.nx) > 0.5;
+
+      return {
+        success: isOutside && stoppedAgainstWall && !!col,
+        isOutside,
+        stoppedAgainstWall,
+        wallNormalApplied: !!wallNormalApplied,
+        resolvedX: testEntity.x,
+        minX: testBldg.minX,
+      };
+    });
+    console.log('[Playtest] Building Solid Collision & Wall Sliding check:', buildingCollisionCheck);
+
+    console.log('[Playtest] Testing Powerup Roadway Spawning & Zero Building Overlap...');
+    const powerupRoadwayCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      const pm = app.powerupManager;
+      const grid = app.spatialGrid;
+      const buildings = (grid.obstacles || []).filter(o => !o.isCar && !o.disabled);
+
+      // Spawn 15 powerups via update loop simulation
+      const pz = app.entityManager?.patientZero || { x: 0, z: -20, angle: 0 };
+      for (let i = 0; i < 15; i++) {
+        pm.spawnTimer = 9.9; // Force spawn trigger
+        pm.powerups.length = 0; // Clear so pool limit doesn't block
+        pm.update(10 + i, 0.5, pz);
+      }
+
+      // Check all spawned powerups against building bounding boxes
+      let overlaps = 0;
+      for (let i = 0; i < pm.powerups.length; i++) {
+        const p = pm.powerups[i];
+        for (let j = 0; j < buildings.length; j++) {
+          const b = buildings[j];
+          if (p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ) {
+            overlaps++;
+          }
+        }
+      }
+
+      return {
+        spawnedCount: pm.powerups.length,
+        overlaps,
+        success: pm.powerups.length > 0 && overlaps === 0,
+      };
+    });
+    console.log('[Playtest] Powerup Roadway Spawning check:', powerupRoadwayCheck);
+
+    console.log('[Playtest] Testing Initials Memory & Pre-fill...');
+    const initialsMemoryCheck = await page.evaluate(() => {
+      const app = window.__GAME_APP__;
+      // 1. Submit initials "ACE"
+      localStorage.setItem('zombie_chase_last_initials', 'ACE');
+
+      // 2. Open initials modal
+      app._openInitialsModal(5000, 10, '01:30');
+
+      // 3. Verify tumblers are pre-filled with 'A', 'C', 'E'
+      const chars = app.tumblerChars.slice();
+      const match = chars[0] === 'A' && chars[1] === 'C' && chars[2] === 'E';
+
+      // 4. Submit a new one "WIN"
+      app.tumblerChars = ['W', 'I', 'N'];
+      app._submitInitials();
+
+      const saved = localStorage.getItem('zombie_chase_last_initials');
+      app._closeInitialsModal();
+
+      return {
+        prefillMatch: match,
+        persistedNew: saved === 'WIN',
+        success: match && saved === 'WIN',
+      };
+    });
+    console.log('[Playtest] Initials Memory & Pre-fill check:', initialsMemoryCheck);
+
     // Check final scale reading
     const finalScale = await page.evaluate(() => window.__GAME_STATE__?.pzVisualScale || 1.0);
     if (finalScale > maxPzVisualScale) maxPzVisualScale = finalScale;
@@ -2017,6 +2162,21 @@ async function runPlaytest() {
 
     if (!spotlightEvasionCheck.success) {
       console.error('[Playtest FAILED] Helicopter spotlight tracking speed limit (7.5 m/s) or evasion reset failed:', spotlightEvasionCheck);
+      process.exit(1);
+    }
+
+    if (!buildingCollisionCheck.success) {
+      console.error('[Playtest FAILED] Building collision solid sliding check failed:', buildingCollisionCheck);
+      process.exit(1);
+    }
+
+    if (!powerupRoadwayCheck.success) {
+      console.error('[Playtest FAILED] Powerup roadway spawning & zero building overlap check failed:', powerupRoadwayCheck);
+      process.exit(1);
+    }
+
+    if (!initialsMemoryCheck.success) {
+      console.error('[Playtest FAILED] Initials QoL memory & pre-fill check failed:', initialsMemoryCheck);
       process.exit(1);
     }
 
