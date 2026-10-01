@@ -91,8 +91,8 @@ export class EntityManager {
 
     // Horde Loss & Alone Survival Countdown (@designer)
     this.hasHadHorde = false;         // Latches to true once player has grown a horde (>= 1 zombie)
-    this.aloneTimer = 7.0;            // Countdown seconds when alone before game over
-    this.maxAloneTime = 7.0;
+    this.maxAloneTime = 10.0;
+    this.aloneTimer = 10.0;           // 10s high-tension survival countdown when lone Patient Zero
     this.isAloneHunted = false;
     this.onAloneStateChanged = null;  // (isActive, remainingTime, maxTime)
 
@@ -434,7 +434,8 @@ export class EntityManager {
         targetPos: null,
         targetEntity: null,
         aimTimer: 0,
-        aimThreshold: 1.8,
+        aimThreshold: 1.05,
+        aimProgress: 0,
         cooldownTimer: 0,
         tracerShot: null,
       };
@@ -671,6 +672,16 @@ export class EntityManager {
 
     this.zombies.push(zombie);
 
+    // Dismiss Alone & Hunted countdown immediately upon acquiring a follower
+    this.hasHadHorde = true;
+    if (this.isAloneHunted) {
+      this.isAloneHunted = false;
+      this.aloneTimer = this.maxAloneTime;
+      if (this.onAloneStateChanged) {
+        this.onAloneStateChanged(false, 0, this.maxAloneTime);
+      }
+    }
+
     if (this.onZombieRecruited) {
       this.onZombieRecruited(zombie.x, zombie.z, this.zombies.length + 1);
     } else if (this.onInfection) {
@@ -705,6 +716,16 @@ export class EntityManager {
     };
 
     this.zombies.push(zombie);
+
+    // Dismiss Alone & Hunted countdown immediately upon infecting a human
+    this.hasHadHorde = true;
+    if (this.isAloneHunted) {
+      this.isAloneHunted = false;
+      this.aloneTimer = this.maxAloneTime;
+      if (this.onAloneStateChanged) {
+        this.onAloneStateChanged(false, 0, this.maxAloneTime);
+      }
+    }
 
     // G1: Combo scoring
     this.comboTimer = this._comboWindow;
@@ -753,6 +774,16 @@ export class EntityManager {
       sprayExposure: 0,
     };
     this.zombies.push(zombie);
+
+    // Dismiss Alone & Hunted countdown immediately upon converting warden
+    this.hasHadHorde = true;
+    if (this.isAloneHunted) {
+      this.isAloneHunted = false;
+      this.aloneTimer = this.maxAloneTime;
+      if (this.onAloneStateChanged) {
+        this.onAloneStateChanged(false, 0, this.maxAloneTime);
+      }
+    }
 
     // Reward: +150 score
     this.score += 150;
@@ -1140,11 +1171,41 @@ export class EntityManager {
     const currentSpeed = pz.speed * speedMult;
 
     if (inputMag > 0.05) {
-      const nx = inputVector.x / inputMag;
-      const nz = inputVector.z / inputMag;
+      let nx = inputVector.x / inputMag;
+      let nz = inputVector.z / inputMag;
+
+      // Magnetic assist toward closest fleeing civilian within 3.5m to eliminate finicky near-misses
+      let nearestCiv = null;
+      let nearestCivDist = 3.5;
+      for (let ci = 0; ci < this.civilians.length; ci++) {
+        const c = this.civilians[ci];
+        if (c.isCaptive || c.cureImmunity > 0 || c.hidden) continue;
+        const cdx = c.x - pz.x;
+        const cdz = c.z - pz.z;
+        const cdist = Math.hypot(cdx, cdz);
+        if (cdist < nearestCivDist) {
+          const dot = (cdx * nx + cdz * nz) / (cdist || 1);
+          if (dot > 0.35) { // Civilian is in steering forward cone
+            nearestCivDist = cdist;
+            nearestCiv = c;
+          }
+        }
+      }
+
+      if (nearestCiv) {
+        const toCivX = (nearestCiv.x - pz.x) / nearestCivDist;
+        const toCivZ = (nearestCiv.z - pz.z) / nearestCivDist;
+        const pull = 0.22; // Gentle, smooth magnetic assist
+        nx = nx * (1 - pull) + toCivX * pull;
+        nz = nz * (1 - pull) + toCivZ * pull;
+        const mag = Math.hypot(nx, nz) || 1;
+        nx /= mag;
+        nz /= mag;
+      }
+
       pz.vx = nx * currentSpeed * Math.min(inputMag, 1.0);
       pz.vz = nz * currentSpeed * Math.min(inputMag, 1.0);
-      pz.angle = Math.atan2(inputVector.x, inputVector.z);
+      pz.angle = Math.atan2(nx, nz);
     } else {
       pz.vx *= Math.pow(0.01, dt);
       pz.vz *= Math.pow(0.01, dt);
@@ -1580,14 +1641,32 @@ export class EntityManager {
       let infected = false;
 
       const pzDist = Math.hypot(c.x - pz.x, c.z - pz.z);
-      if (pzDist <= (c.radius + pz.radius + 0.15 + reachBonus) * hitRadiusMult) {
+      // Increased infection contact reach from 0.15 to 0.55 for responsive, forgiving contact
+      const contactReach = (c.radius + pz.radius + 0.55 + reachBonus) * hitRadiusMult;
+      if (pzDist <= contactReach) {
         infected = true;
       }
 
+      // Continuous collision swept check between previous and current PZ positions
+      if (!infected && typeof pzPrevX === 'number' && typeof pzPrevZ === 'number') {
+        const segDx = pz.x - pzPrevX;
+        const segDz = pz.z - pzPrevZ;
+        const segLenSq = segDx * segDx + segDz * segDz;
+        if (segLenSq > 0.001) {
+          const t = Math.max(0, Math.min(1, ((c.x - pzPrevX) * segDx + (c.z - pzPrevZ) * segDz) / segLenSq));
+          const closeX = pzPrevX + t * segDx;
+          const closeZ = pzPrevZ + t * segDz;
+          const sweptDist = Math.hypot(c.x - closeX, c.z - closeZ);
+          if (sweptDist <= contactReach) {
+            infected = true;
+          }
+        }
+      }
+
       if (!infected) {
-        spatialGrid.forEachNearby(c.x, c.z, (c.radius + 0.7 + reachBonus) * hitRadiusMult, (neighbor, distSq) => {
+        spatialGrid.forEachNearby(c.x, c.z, (c.radius + 0.95 + reachBonus) * hitRadiusMult, (neighbor, distSq) => {
           if (neighbor.type === 'zombie') {
-            const minDist = (c.radius + neighbor.radius + 0.15 + reachBonus) * hitRadiusMult;
+            const minDist = (c.radius + neighbor.radius + 0.35 + reachBonus) * hitRadiusMult;
             if (distSq <= minDist * minDist) {
               infected = true;
               return true;
@@ -2086,18 +2165,33 @@ export class EntityManager {
         m.aimTimer += dt;
         m.speed = 0;
 
-        const aimThreshold = this.currentStage >= 4 ? 1.0 : 1.8;
+        // Tightened time-to-kill: 1.05s baseline (0.75s in late stages) for urgent, lethal threat
+        const aimThreshold = this.currentStage >= 4 ? 0.75 : 1.05;
         m.aimThreshold = aimThreshold;
+        m.aimProgress = Math.min(1.0, m.aimTimer / aimThreshold);
+
+        // Telegraph lock-on audio warning as shot finishes charging
+        if (m.aimProgress >= 0.70 && !m.lockOnWarned) {
+          m.lockOnWarned = true;
+          if (this.onMilitaryLockOn) {
+            this.onMilitaryLockOn(target.x, target.z);
+          }
+        }
+
         const tDist = Math.hypot(target.x - m.x, target.z - m.z);
         if (tDist > 20.0 || !this._checkLineOfSight(m.x, m.z, target.x, target.z, spatialGrid)) {
           m.state = 'patrol';
           m.targetPos = null;
           m.aimTimer = 0;
+          m.aimProgress = 0;
+          m.lockOnWarned = false;
         } else if (m.aimTimer >= aimThreshold) {
           // FIRE!
           m.state = 'cooldown';
-          m.cooldownTimer = 2.2;
+          m.cooldownTimer = 1.6;
           m.aimTimer = 0;
+          m.aimProgress = 0;
+          m.lockOnWarned = false;
 
           const aimAngle = Math.atan2(target.x - m.x, target.z - m.z);
           const shotDirX = Math.sin(aimAngle);
@@ -3604,12 +3698,12 @@ export class EntityManager {
       }
 
       // Destruction Condition 1: Titan Mode ramming collision
-      // Destruction Condition 2: 40+ Zombie Phalanx Push
+      // Destruction Condition 2: 40+ Zombie Swarm Overrun
       const isTitanRam = (this.isTitan && dist <= 3.2);
-      const isPhalanxOverwhelm = (this.isPhalanx && this.zombies.length >= 40 && dist <= 3.5);
+      const isSwarmOverrun = (this.zombies.length >= 40 && dist <= 3.5);
 
-      if (isTitanRam || isPhalanxOverwhelm) {
-        this.destroyTank(i, isTitanRam ? 'TITAN RAM!' : '40+ PHALANX OVERRUN!');
+      if (isTitanRam || isSwarmOverrun) {
+        this.destroyTank(i, isTitanRam ? 'TITAN RAM!' : '40+ SWARM OVERRUN!');
         continue;
       }
 

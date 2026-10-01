@@ -277,6 +277,24 @@ export class InstancedRenderer {
       this.tracerLines.push(tracerLine);
     }
 
+    // 8d. Military Sniper Lock-On Warning Reticles
+    this.lockOnRings = [];
+    for (let i = 0; i < 16; i++) {
+      const ringGeom = new THREE.RingGeometry(0.45, 0.65, 32);
+      ringGeom.rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xff1144,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const ringMesh = new THREE.Mesh(ringGeom, ringMat);
+      ringMesh.visible = false;
+      scene.add(ringMesh);
+      this.lockOnRings.push(ringMesh);
+    }
+
     // V3: Horde Shadow Mass — dark ellipse decal under zombie swarm
     const shadowGeom = new THREE.CircleGeometry(1.0, 32);
     shadowGeom.rotateX(-Math.PI / 2);
@@ -574,29 +592,53 @@ export class InstancedRenderer {
       mAnimArr[idx + 2] = 4.0; // animType 4.0 = military rifle aim stance
       mAnimArr[idx + 3] = 0.0;
 
-      // Update Laser Sight Line (visible while aiming)
-      if (i < this.militaryLasers.length && m.targetPos && m.state === 'aiming') {
+      // Update Laser Sight Line & Lock-On Warning Reticle (visible while aiming)
+      if (i < this.militaryLasers.length) {
         const laser = this.militaryLasers[i];
-        laser.visible = true;
+        const ring = this.lockOnRings ? this.lockOnRings[i] : null;
 
-        // Gun muzzle origin (rifle tip in world coordinates)
-        const mx = m.x + Math.sin(m.angle) * 0.72;
-        const my = groundY + 0.86;
-        const mz = m.z + Math.cos(m.angle) * 0.72;
+        if (m.targetPos && m.state === 'aiming') {
+          laser.visible = true;
 
-        const posAttr = laser.geometry.attributes.position;
-        const pArr = posAttr.array;
-        pArr[0] = mx;
-        pArr[1] = my;
-        pArr[2] = mz;
-        pArr[3] = m.targetPos.x;
-        pArr[4] = m.targetPos.y ?? (getCharacterGroundY(m.targetPos.x, m.targetPos.z) + 0.7);
-        pArr[5] = m.targetPos.z;
-        posAttr.needsUpdate = true;
+          // Gun muzzle origin (rifle tip in world coordinates)
+          const mx = m.x + Math.sin(m.angle) * 0.72;
+          const my = groundY + 0.86;
+          const mz = m.z + Math.cos(m.angle) * 0.72;
 
-        // Brighten and pulse laser as 1.5s charge completes
-        const chargeRatio = Math.min(1.0, (m.aimTimer || 0) / 1.5);
-        laser.material.opacity = 0.4 + chargeRatio * 0.55 + Math.sin(time * 20.0) * 0.1;
+          const tgtY = m.targetPos.y ?? (getCharacterGroundY(m.targetPos.x, m.targetPos.z) + 0.7);
+
+          const posAttr = laser.geometry.attributes.position;
+          const pArr = posAttr.array;
+          pArr[0] = mx;
+          pArr[1] = my;
+          pArr[2] = mz;
+          pArr[3] = m.targetPos.x;
+          pArr[4] = tgtY;
+          pArr[5] = m.targetPos.z;
+          posAttr.needsUpdate = true;
+
+          // Brighten, color-shift and pulse laser as charge completes
+          const aimThreshold = m.aimThreshold || 1.05;
+          const chargeRatio = Math.min(1.0, (m.aimTimer || 0) / aimThreshold);
+          const isCritical = chargeRatio >= 0.70;
+          laser.material.color.setHex(isCritical ? (Math.sin(time * 35.0) > 0 ? 0xffffff : 0xff0033) : 0xff1144);
+          laser.material.opacity = 0.5 + chargeRatio * 0.45 + Math.sin(time * (isCritical ? 35.0 : 18.0)) * 0.15;
+
+          // Update Lock-On Reticle on ground under target
+          if (ring) {
+            ring.visible = true;
+            const groundTgtY = getCharacterGroundY(m.targetPos.x, m.targetPos.z) + 0.06;
+            ring.position.set(m.targetPos.x, groundTgtY, m.targetPos.z);
+            // Ring shrinks and locks on as shot charges
+            const scale = Math.max(0.7, 1.4 - chargeRatio * 0.65);
+            ring.scale.set(scale, scale, scale);
+            ring.material.color.setHex(isCritical ? (Math.sin(time * 35.0) > 0 ? 0xffffff : 0xff0033) : 0xff1144);
+            ring.material.opacity = 0.6 + chargeRatio * 0.4;
+          }
+        } else {
+          laser.visible = false;
+          if (ring) ring.visible = false;
+        }
       }
 
       // Update High-Velocity Tracer Flash Line
@@ -614,6 +656,11 @@ export class InstancedRenderer {
         tPos.needsUpdate = true;
         tracer.material.opacity = m.tracerShot.alpha || 0.95;
       }
+    }
+
+    for (let i = mCount; i < this.militaryLasers.length; i++) {
+      if (this.militaryLasers[i]) this.militaryLasers[i].visible = false;
+      if (this.lockOnRings && this.lockOnRings[i]) this.lockOnRings[i].visible = false;
     }
 
     this.militaryMesh.instanceMatrix.needsUpdate = true;

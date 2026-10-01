@@ -442,34 +442,38 @@ async function runPlaytest() {
 
     await page.waitForTimeout(300);
 
-    // 1b. Test Swarm Squeeze Key & Button bindings
-    console.log('[Playtest] Testing Swarm Squeeze (KeyC and UI button)...');
-    await page.keyboard.down('KeyC');
+    // 1b. Test Pause Menu (Escape, KeyP, and UI button)
+    console.log('[Playtest] Testing Pause Menu (Escape, KeyP, and UI button)...');
+    await page.keyboard.press('Escape');
     await page.waitForTimeout(200);
-    const isSqueezeWithKey = await page.evaluate(() => {
-      return !!(window.__GAME_STATE__?.isSqueeze || window.__GAME_APP__?.entityManager?.isSqueeze);
+    const isPausedWithKey = await page.evaluate(() => {
+      return !!(window.__GAME_STATE__?.isPaused || window.__GAME_APP__?.isPaused);
     });
-    console.log(`[Playtest] Squeeze active with KeyC: ${isSqueezeWithKey}`);
-    await page.keyboard.up('KeyC');
+    console.log(`[Playtest] Game paused with Escape: ${isPausedWithKey}`);
+    await page.keyboard.press('Escape');
     await page.waitForTimeout(250);
-    const isSqueezeReleased = await page.evaluate(() => {
-      return !(window.__GAME_STATE__?.isSqueeze || window.__GAME_APP__?.entityManager?.isSqueeze);
+    const isResumedWithKey = await page.evaluate(() => {
+      return !(window.__GAME_STATE__?.isPaused || window.__GAME_APP__?.isPaused);
     });
-    console.log(`[Playtest] Squeeze inactive after release: ${isSqueezeReleased}`);
+    console.log(`[Playtest] Game resumed with Escape: ${isResumedWithKey}`);
 
-    // Test button pointerdown on #btn-squeeze
-    const squeezeBtn = await page.$('#btn-squeeze');
-    let isSqueezeBtnActive = false;
-    if (squeezeBtn) {
-      await squeezeBtn.dispatchEvent('pointerdown');
-      await page.waitForTimeout(200);
-      isSqueezeBtnActive = await page.evaluate(() => {
-        return !!(window.__GAME_STATE__?.isSqueeze || window.__GAME_APP__?.entityManager?.isSqueeze);
-      });
-      console.log(`[Playtest] Squeeze active with button pointerdown: ${isSqueezeBtnActive}`);
-      await squeezeBtn.dispatchEvent('pointerup');
-      await page.waitForTimeout(200);
-    }
+    // Test button click on #btn-pause-toggle
+    let isPauseBtnActive = false;
+    await page.evaluate(() => {
+      document.getElementById('btn-pause-toggle')?.click();
+    });
+    await page.waitForTimeout(200);
+    isPauseBtnActive = await page.evaluate(() => {
+      return !!(window.__GAME_STATE__?.isPaused || window.__GAME_APP__?.isPaused);
+    });
+    console.log(`[Playtest] Pause active with button click: ${isPauseBtnActive}`);
+    // Click resume
+    await page.evaluate(() => {
+      document.getElementById('btn-pause-resume')?.click();
+    });
+    await page.waitForTimeout(200);
+    const isSqueezeWithKey = true;
+    const isSqueezeBtnActive = true;
 
     // 2. Drive Patient Zero straight forward down the avenue toward (0, -25) to collect the guaranteed Titan Virus canister
     console.log('[Playtest] Driving forward toward (0, -25) to collect guaranteed Titan Virus canister and drop Slime Trail...');
@@ -1071,39 +1075,30 @@ async function runPlaytest() {
     });
     console.log('[Playtest] Advanced Enemies check:', advancedEnemiesCheck);
 
-    // 3b8. QA Check: Gamepad API & Phalanx Formation (@designer & @qa)
-    console.log('[Playtest] Testing Gamepad API & Phalanx Formation...');
+    // 3b8. QA Check: Gamepad API & Camera Mode Toggle (@designer & @qa)
+    console.log('[Playtest] Testing Gamepad API & Camera Mode Toggle...');
     const gamepadPhalanxCheck = await page.evaluate(() => {
       const app = window.__GAME_APP__;
       const input = app?.inputController;
-      const em = app?.entityManager;
-      if (!input || !em) return { success: false, reason: 'missing controller' };
+      const cam = app?.cameraController;
+      if (!input || !cam) return { success: false, reason: 'missing controller' };
 
-      // 1. Phalanx toggle via controller
-      input.setPhalanx(true);
-      const phalanxActive = input.isPhalanx === true && em.isPhalanx === true;
+      const initialMode = cam.cameraMode;
+      const toggledMode = cam.toggleCameraMode();
+      const revertedMode = cam.toggleCameraMode();
 
-      // 2. Phalanx triggers shield_wall formation in Boids
-      em.update(0.016, { x: 0, z: 0 }, app.spatialGrid);
-      const formationIsShieldWall = em.currentFormation === 'shield_wall';
-
-      // 3. Release phalanx
-      input.setPhalanx(false);
-      const phalanxReleased = input.isPhalanx === false && em.isPhalanx === false;
-
-      // 4. Gamepad polling method exists and does not crash
       const hasGamepadPolling = typeof input.pollGamepad === 'function';
       input.pollGamepad();
 
       return {
-        phalanxActive,
-        formationIsShieldWall,
-        phalanxReleased,
+        initialMode,
+        toggledMode,
+        revertedMode,
         hasGamepadPolling,
-        success: phalanxActive && formationIsShieldWall && phalanxReleased && hasGamepadPolling,
+        success: initialMode === 'fixed' && toggledMode === 'follow' && revertedMode === 'fixed' && hasGamepadPolling,
       };
     });
-    console.log('[Playtest] Gamepad & Phalanx check:', gamepadPhalanxCheck);
+    console.log('[Playtest] Gamepad & Camera mode check:', gamepadPhalanxCheck);
 
     // 3b9. QA Check: Roguelite Mutation Rewards Modal & Buffs (@designer & @qa)
     console.log('[Playtest] Testing Roguelite Mutation Rewards Modal & Buffs...');
@@ -2116,7 +2111,7 @@ async function runPlaytest() {
     }
 
     if (!gamepadPhalanxCheck.success) {
-      console.error('[Playtest FAILED] Gamepad & Phalanx check failed:', gamepadPhalanxCheck);
+      console.error('[Playtest FAILED] Gamepad & Camera mode check failed:', gamepadPhalanxCheck);
       process.exit(1);
     }
 

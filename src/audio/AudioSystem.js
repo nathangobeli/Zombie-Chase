@@ -296,6 +296,23 @@ export class AudioSystem {
     osc.stop(t + 0.24);
   }
 
+  /** Play a high-tension lock-on telegraph chirp as sniper finishes aiming */
+  playLockOnWarning() {
+    if (!this._ctx) return;
+    const t = this._ctx.currentTime;
+    const osc = this._ctx.createOscillator();
+    const env = this._ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.exponentialRampToValueAtTime(1760, t + 0.16);
+    env.gain.setValueAtTime(0.18, t);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.connect(env);
+    env.connect(this._masterGain);
+    osc.start(t);
+    osc.stop(t + 0.18);
+  }
+
   /** Play a sub-bass ground stomp thud for the Titan */
   playTitanStomp() {
     if (!this._ctx) return;

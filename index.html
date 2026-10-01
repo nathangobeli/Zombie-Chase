@@ -56,13 +56,18 @@
         <div id="hud-time-attack" class="hud-card time-attack-card hidden">
           <div class="card-label">TIME REMAINING</div>
           <div class="card-value-row">
-            <span id="time-attack-val" class="time-attack-val">02:00</span>
+            <span id="hud-time-attack-val" class="time-attack-val">02:00</span>
             <span class="time-attack-icon">⏱️</span>
           </div>
           <div class="time-attack-progress-bar">
             <div id="time-attack-bar-fill" class="time-attack-bar-fill"></div>
           </div>
         </div>
+
+        <!-- Pause Button -->
+        <button id="btn-pause-toggle" class="hud-pause-btn" title="Pause Game (Esc / P)" aria-label="Pause Game">
+          <span class="pause-icon">⏸️</span>
+        </button>
       </div>
 
       <!-- Collapsible Developer / Debug Drawer (Hidden during standard runs) -->
@@ -155,7 +160,7 @@
         <div class="alone-bar-wrapper">
           <div id="alone-bar-fill" class="alone-bar-fill"></div>
         </div>
-        <div id="alone-countdown-text" class="alone-countdown-text">7.0s</div>
+        <div id="alone-countdown-text" class="alone-countdown-text">10.0s</div>
       </div>
 
       <!-- Zombie Safe Zone Deposit Channeling Widget (@designer & @artist) -->
@@ -184,23 +189,9 @@
         <div class="mist-label">DECONTAMINATING</div>
       </div>
 
-      <!-- Bottom HUD: Action Buttons Only (Controls Hint Removed for Mobile Real Estate) -->
+      <!-- Bottom HUD: Action Buttons Only (Frenzy Speed Burst) -->
       <div class="hud-bottom">
         <div class="action-btn-wrapper interactive-hud">
-          <button id="btn-squeeze" class="hud-btn-squeeze" title="Hold to Squeeze Swarm (C / Shift / Pinch / RT)">
-            <div class="btn-inner">
-              <div class="btn-icon-flash">🏹</div>
-              <div class="btn-label" style="font-size: 8px; font-weight: 800; letter-spacing: 0.5px;">SQUEEZE</div>
-            </div>
-          </button>
-
-          <button id="btn-phalanx" class="hud-btn-phalanx" title="Hold Phalanx / Shield Wall (X / F / LT)">
-            <div class="btn-inner">
-              <div class="btn-icon-flash">🛡️</div>
-              <div class="btn-label" style="font-size: 8px; font-weight: 800; letter-spacing: 0.5px;">PHALANX</div>
-            </div>
-          </button>
-
           <button id="btn-frenzy" class="frenzy-btn" title="Frenzy Speed Burst (Space / Gamepad A)">
             <svg class="cooldown-ring" viewBox="0 0 100 100">
               <circle class="ring-bg" cx="50" cy="50" r="44" />
@@ -282,7 +273,7 @@
         </div>
 
         <div class="menu-hint">
-          <span>DRAG TO MOVE • HOLD SQUEEZE IN ALLEYS • AVOID MOVING TRAFFIC</span>
+          <span>DRAG OR WASD TO STEER • SPACE FOR FRENZY BURST • AVOID MOVING TRAFFIC</span>
         </div>
       </div>
     </div>
@@ -301,7 +292,7 @@
             <div class="rule-icon">🎮</div>
             <div class="rule-text">
               <div class="rule-heading">GAME MODES &amp; STEERING</div>
-              <p>Choose <strong>Time Attack</strong> (race against a 90s clock; each infection adds +2.5s bonus time) or <strong>Endless Outbreak</strong> (survive as long as possible). Drag anywhere on screen or use WASD to steer Patient Zero. Hold <strong>SQUEEZE</strong> (C / Shift) to compress your horde through tight alleys, and flick (E) to transfer leadership forward!</p>
+              <p>Choose <strong>Time Attack</strong> (survive against a 2, 5, or 10-minute clock with score survival multipliers up to +100%) or <strong>Endless Outbreak</strong> (survive as long as possible against escalating military threats). Drag anywhere on screen or use WASD to steer Patient Zero. Tap <strong>FRENZY</strong> (Space) for a high-speed dash, and flick (E) to transfer leadership forward!</p>
             </div>
           </div>
 
@@ -498,7 +489,7 @@
         </div>
 
         <div class="lab-actions">
-          <button id="btn-close-lab" class="menu-btn menu-btn-start" style="width: 100%;">APPLY &amp; RETURN ▶</button>
+          <button id="btn-close-lab-footer" class="menu-btn menu-btn-start" style="width: 100%;">APPLY &amp; RETURN ▶</button>
         </div>
       </div>
     </div>
@@ -533,6 +524,25 @@
             <div class="mutation-card-desc">Virulent airborne pathogens expand stray zombie and civilian infection hitboxes by +25%.</div>
             <div class="mutation-card-badge">SWARM EXPANSION</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- In-Game Pause Modal Overlay -->
+    <div id="pause-modal" class="game-over-modal pause-modal" style="display: none;">
+      <div class="pause-card">
+        <div class="hazard-stripes-bar"></div>
+        <div class="pause-header">
+          <div class="pause-badge">⏸️ SIMULATION PAUSED</div>
+          <h2 class="pause-title">GAME PAUSED</h2>
+          <div class="pause-sub">CURRENT MODE: <span id="pause-mode-badge" class="stat-highlight">TIME ATTACK</span> | SEVERITY: <span id="pause-diff-badge" class="diff-badge">OUTBREAK</span></div>
+        </div>
+        <div class="pause-actions">
+          <button id="btn-pause-resume" class="menu-btn menu-btn-start">▶ RESUME (ESC / P)</button>
+          <button id="btn-pause-restart" class="menu-btn menu-btn-scores">🔄 RESTART RUN (R)</button>
+          <button id="btn-pause-lab" class="menu-btn menu-btn-lab">🧪 MUTATION LAB</button>
+          <button id="btn-pause-camera" class="menu-btn menu-btn-rules">🎥 CAMERA: <span id="pause-camera-label">FIXED NORTH-UP</span></button>
+          <button id="btn-pause-menu" class="menu-btn" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #fca5a5;">🏠 QUIT TO MAIN MENU (Q)</button>
         </div>
       </div>
     </div>

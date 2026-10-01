@@ -144,8 +144,20 @@ class GameApp {
 
     // Game Mode & Time Attack UI
     this.hudTimeAttackEl = document.getElementById('hud-time-attack');
-    this.hudTimeAttackVal = document.getElementById('hud-time-attack-val');
+    this.hudTimeAttackVal = document.getElementById('hud-time-attack-val') || document.getElementById('time-attack-val');
+    this.hudTimeAttackBarFill = document.getElementById('time-attack-bar-fill');
     this.modePills = document.querySelectorAll('.mode-pill');
+    this.timeAttackDuration = Infinity;
+
+    // Pause Modal UI (@qa & @designer)
+    this.pauseModalEl = document.getElementById('pause-modal');
+    this.btnPauseToggle = document.getElementById('btn-pause-toggle');
+    this.btnPauseResume = document.getElementById('btn-pause-resume');
+    this.btnPauseRestart = document.getElementById('btn-pause-restart');
+    this.btnPauseLab = document.getElementById('btn-pause-lab');
+    this.btnPauseCamera = document.getElementById('btn-pause-camera');
+    this.btnPauseQuit = document.getElementById('btn-pause-quit');
+    this.isPaused = false;
 
     // Safe Zone Deposit Channeling Widget
     this.safeZoneWidgetEl = document.getElementById('safezone-channel-widget');
@@ -158,8 +170,8 @@ class GameApp {
     this.labModalEl = document.getElementById('lab-modal');
     this.labBalanceEl = document.getElementById('lab-banked-balance') || document.getElementById('lab-banked-count');
     this.labGridEl = document.getElementById('lab-enhancements-grid');
-    this.btnCloseLab = document.getElementById('btn-close-lab');
-    this.btnCloseLabFooter = document.getElementById('btn-close-lab-footer');
+    this.btnCloseLab = document.getElementById('btn-close-lab') || document.getElementById('btn-close-lab-footer');
+    this.btnCloseLabFooter = document.getElementById('btn-close-lab-footer') || document.getElementById('btn-close-lab');
     this.gameoverModeTabs = document.getElementById('gameover-mode-tabs');
     this.standaloneModeTabs = document.getElementById('standalone-mode-tabs');
 
@@ -351,21 +363,26 @@ class GameApp {
     // 4. Audio System (E6)
     this.audioSystem = new AudioSystem();
 
-    // 5. Input Controller with Squeeze & Phalanx Support
-    this.squeezeBtn = document.getElementById('btn-squeeze');
-    this.phalanxBtn = document.getElementById('btn-phalanx');
+    // 5. Input Controller
     this.wardensSilencedCount = 0;
     this.civiliansSlippedCount = 0;
     this.inputController = new InputController(
       this.container,
       this.frenzyBtn,
       (dirX, dirZ) => this._onAvatarTransferRequest(dirX, dirZ),
-      () => this._onFrenzyRequest(),
-      (active) => this._onSqueezeChange(active),
-      this.squeezeBtn,
-      (active) => this._onPhalanxChange(active),
-      this.phalanxBtn
+      () => this._onFrenzyRequest()
     );
+    this.inputController.onPauseToggle = () => this.togglePause();
+    this.inputController.onRestart = () => {
+      if (this.gameState === 'STATE_PLAYING' || this.isPaused) {
+        this._restartFromPause();
+      }
+    };
+    this.inputController.onQuit = () => {
+      if (this.gameState === 'STATE_PLAYING' || this.isPaused) {
+        this._quitToMenu();
+      }
+    };
 
     // 6. Camera building occlusion raycasting & transparency state
     this.occlusionRaycaster = new THREE.Raycaster();
@@ -391,9 +408,11 @@ class GameApp {
     // Bind Entity Callbacks
     this._setupEntityEvents();
 
-    // Bind Main Menu, Toolbar, and Leaderboard Events
+    // Bind Main Menu, Toolbar, Pause Modal, and Leaderboard Events
     this._setupMainMenu();
     this._setupToolbar();
+    this._setupPauseModal();
+    this._updatePauseCameraBtnText();
     this._bindLeaderboardAndTumblerEvents();
 
     // Handle Resize
@@ -810,7 +829,7 @@ class GameApp {
     // Alone & Hunted Survival Countdown (@designer)
     this.entityManager.onAloneStateChanged = (isActive, remainingTime, maxTime) => {
       if (!this.aloneWarningEl) return;
-      if (isActive && !this.isGameOver) {
+      if (isActive && !this.isGameOver && this.gameState !== 'STATE_MENU' && remainingTime > 0) {
         this.gameState = 'STATE_LAST_STAND';
         this.aloneWarningEl.classList.remove('hidden');
         if (this.aloneBarFillEl) {
@@ -865,6 +884,12 @@ class GameApp {
     this.entityManager.onMilitarySnipe = (x, z) => {
       this.audioSystem.playGunshot();
       this.cameraController.triggerShake(0.28, 0.3);
+    };
+
+    this.entityManager.onMilitaryLockOn = (x, z) => {
+      if (this.audioSystem && this.audioSystem.playLockOnWarning) {
+        this.audioSystem.playLockOnWarning();
+      }
     };
 
     this.entityManager.onMilitaryInfected = (x, z) => {
@@ -1225,10 +1250,15 @@ class GameApp {
 
   _restartGame() {
     this.gameState = 'STATE_PLAYING';
+    this.isPaused = false;
     this.isGameOver = false;
     this.gameTime = 0;
     this.peakHorde = 1;
     this._closeInitialsModal();
+    if (this.pauseModalEl) {
+      this.pauseModalEl.style.display = 'none';
+      this.pauseModalEl.classList.add('hidden');
+    }
     if (this.mainMenuOverlayEl) {
       this.mainMenuOverlayEl.style.display = 'none';
       this.mainMenuOverlayEl.classList.add('hidden');
@@ -1247,6 +1277,28 @@ class GameApp {
     if (this.quarantineBannerEl) {
       this.quarantineBannerEl.classList.remove('quarantine-banner-active');
       this.quarantineBannerEl.classList.add('hidden');
+    }
+
+    // Reset Time Attack countdown timer
+    const MODE_DURATIONS = {
+      endless: Infinity,
+      time_attack_2: 120,
+      time_attack_5: 300,
+      time_attack_10: 600,
+    };
+    if (this.activeGameMode !== 'endless') {
+      this.timeAttackDuration = MODE_DURATIONS[this.activeGameMode] || 120;
+      this.timeAttackTimer = this.timeAttackDuration;
+      if (this.hudTimeAttackEl) {
+        this.hudTimeAttackEl.classList.remove('hidden');
+      }
+      this._updateTimeAttackDisplay();
+    } else {
+      this.timeAttackDuration = Infinity;
+      this.timeAttackTimer = 0;
+      if (this.hudTimeAttackEl) {
+        this.hudTimeAttackEl.classList.add('hidden');
+      }
     }
 
     for (const d of this.debrisList) {
@@ -1296,6 +1348,23 @@ class GameApp {
     this._showToast('SIMULATION RESET');
   }
 
+  _updateTimeAttackDisplay() {
+    if (this.hudTimeAttackVal) {
+      const mins = Math.floor(this.timeAttackTimer / 60);
+      const secs = Math.floor(this.timeAttackTimer % 60);
+      this.hudTimeAttackVal.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      if (this.timeAttackTimer <= 10) {
+        this.hudTimeAttackVal.classList.add('critical');
+      } else {
+        this.hudTimeAttackVal.classList.remove('critical');
+      }
+    }
+    if (this.hudTimeAttackBarFill && this.timeAttackDuration > 0 && this.timeAttackDuration !== Infinity) {
+      const pct = Math.max(0, Math.min(100, (this.timeAttackTimer / this.timeAttackDuration) * 100));
+      this.hudTimeAttackBarFill.style.width = `${pct}%`;
+    }
+  }
+
   startGame(difficulty = this.activeDifficulty, mode = this.activeGameMode) {
     this.activeDifficulty = difficulty;
     this.activeGameMode = mode;
@@ -1311,46 +1380,29 @@ class GameApp {
     this.entityManager.applyEnhancementBuffs(enhancements);
     this.usedEnhancements = this.storageSystem.isEnhancementsUsed();
 
-    // Time Attack setup
-    const MODE_DURATIONS = {
-      endless: Infinity,
-      time_attack_2: 120,
-      time_attack_5: 300,
-      time_attack_10: 600,
-    };
-    if (this.activeGameMode !== 'endless') {
-      this.timeAttackTimer = MODE_DURATIONS[this.activeGameMode] || 120;
-      if (this.hudTimeAttackEl) {
-        this.hudTimeAttackEl.classList.remove('hidden');
-      }
-      if (this.hudTimeAttackVal) {
-        const mins = Math.floor(this.timeAttackTimer / 60);
-        const secs = Math.floor(this.timeAttackTimer % 60);
-        this.hudTimeAttackVal.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-        this.hudTimeAttackVal.classList.remove('critical');
-      }
-    } else {
-      this.timeAttackTimer = 0;
-      if (this.hudTimeAttackEl) {
-        this.hudTimeAttackEl.classList.add('hidden');
-      }
-    }
-
     this._restartGame();
     this.audioSystem.start();
   }
 
   returnToMenu() {
     this.gameState = 'STATE_MENU';
+    this.isPaused = false;
     if (window.__GAME_STATE__) {
       window.__GAME_STATE__.gameState = 'STATE_MENU';
+      window.__GAME_STATE__.isPaused = false;
     }
     this.isGameOver = false;
     this.gameTime = 0;
+    this.timeAttackTimer = 0;
+    this.timeAttackDuration = Infinity;
     this.peakHorde = 1;
     this.currentStage = 1;
     this.stageName = 'STAGE 1: OUTBREAK DAWN';
     this._closeInitialsModal();
+    if (this.pauseModalEl) {
+      this.pauseModalEl.style.display = 'none';
+      this.pauseModalEl.classList.add('hidden');
+    }
     if (this.stageBannerEl) {
       this.stageBannerEl.classList.remove('stage-banner-active');
       this.stageBannerEl.classList.add('hidden');
@@ -1442,10 +1494,30 @@ class GameApp {
     this._renderLabCards();
   }
 
+  _toggleLabModal() {
+    if (!this.labModalEl) return;
+    const isVisible = this.labModalEl.style.display === 'flex' && !this.labModalEl.classList.contains('hidden');
+    if (isVisible) {
+      this._closeLabModal();
+    } else {
+      this._openLabModal();
+    }
+  }
+
   _closeLabModal() {
     if (!this.labModalEl) return;
     this.labModalEl.style.display = 'none';
     this.labModalEl.classList.add('hidden');
+    if (this.storageSystem && this.entityManager) {
+      const enhancements = this.storageSystem.getEnhancements().active;
+      this.entityManager.applyEnhancementBuffs(enhancements);
+      this.usedEnhancements = this.storageSystem.isEnhancementsUsed();
+    }
+    this._updateBankedZombiesUI();
+    if (this.isPaused && this.pauseModalEl) {
+      this.pauseModalEl.style.display = 'flex';
+      this.pauseModalEl.classList.remove('hidden');
+    }
   }
 
   _renderLabCards() {
@@ -1563,7 +1635,7 @@ class GameApp {
 
     if (this.btnMenuLab) {
       this.btnMenuLab.addEventListener('click', () => {
-        this._openLabModal();
+        this._toggleLabModal();
       });
     }
 
@@ -1679,6 +1751,48 @@ class GameApp {
       });
     }
 
+    // Gate Developer Cheats & Telemetry Drawer (@qa)
+    const urlParams = new URLSearchParams(window.location.search);
+    const devParam = urlParams.get('dev');
+    let isDev = devParam === 'true' || devParam === '1';
+    try {
+      if (localStorage.getItem('zombie_chase_dev') === 'true') {
+        isDev = true;
+      }
+    } catch (_) {}
+
+    if (this.debugDrawerEl) {
+      if (!isDev) {
+        this.debugDrawerEl.classList.add('dev-hidden');
+      } else {
+        this.debugDrawerEl.classList.remove('dev-hidden');
+      }
+    }
+
+    // Dev mode toggle hotkey: Ctrl + Shift + D (or Cmd + Shift + D)
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyD') {
+        e.preventDefault();
+        if (this.debugDrawerEl) {
+          const isHidden = this.debugDrawerEl.classList.toggle('dev-hidden');
+          try {
+            localStorage.setItem('zombie_chase_dev', isHidden ? 'false' : 'true');
+          } catch (_) {}
+          this._showToast(isHidden ? 'DEV CHEATS HIDDEN' : 'DEV CHEATS ENABLED');
+        }
+      }
+    });
+
+    window.__ENABLE_DEV_MODE = (enable = true) => {
+      if (this.debugDrawerEl) {
+        this.debugDrawerEl.classList.toggle('dev-hidden', !enable);
+        try {
+          localStorage.setItem('zombie_chase_dev', enable ? 'true' : 'false');
+        } catch (_) {}
+      }
+      return `Dev mode ${enable ? 'ENABLED' : 'DISABLED'}`;
+    };
+
     // Toggle Developer Cheats & Telemetry Drawer
     if (this.btnToggleDebug) {
       this.btnToggleDebug.addEventListener('click', () => {
@@ -1689,6 +1803,100 @@ class GameApp {
     }
   }
 
+  // =========================================================
+  // PAUSE MENU SYSTEM (@qa & @designer)
+  // =========================================================
+
+  _setupPauseModal() {
+    if (this.btnPauseToggle) {
+      this.btnPauseToggle.addEventListener('click', () => {
+        this.togglePause();
+      });
+    }
+
+    if (this.btnPauseResume) {
+      this.btnPauseResume.addEventListener('click', () => {
+        this.resumeGame();
+      });
+    }
+
+    if (this.btnPauseRestart) {
+      this.btnPauseRestart.addEventListener('click', () => {
+        this._restartFromPause();
+      });
+    }
+
+    if (this.btnPauseLab) {
+      this.btnPauseLab.addEventListener('click', () => {
+        this._openLabModal();
+      });
+    }
+
+    if (this.btnPauseCamera) {
+      this.btnPauseCamera.addEventListener('click', () => {
+        if (this.cameraController) {
+          this.cameraController.toggleCameraMode();
+          this._updatePauseCameraBtnText();
+          this._showToast(`CAMERA: ${this.cameraController.cameraMode.toUpperCase()}`);
+        }
+      });
+    }
+
+    if (this.btnPauseQuit) {
+      this.btnPauseQuit.addEventListener('click', () => {
+        this._quitToMenu();
+      });
+    }
+  }
+
+  togglePause() {
+    if (this.gameState === 'STATE_MENU' || this.isGameOver || this.isEnteringInitials) return;
+    if (this.isPaused) {
+      this.resumeGame();
+    } else {
+      this.pauseGame();
+    }
+  }
+
+  pauseGame() {
+    if (this.isPaused || this.gameState === 'STATE_MENU' || this.isGameOver) return;
+    this.isPaused = true;
+    if (this.pauseModalEl) {
+      this.pauseModalEl.style.display = 'flex';
+      this.pauseModalEl.classList.remove('hidden');
+    }
+    this._updatePauseCameraBtnText();
+  }
+
+  resumeGame() {
+    if (!this.isPaused) return;
+    this.isPaused = false;
+    if (this.pauseModalEl) {
+      this.pauseModalEl.style.display = 'none';
+      this.pauseModalEl.classList.add('hidden');
+    }
+  }
+
+  _restartFromPause() {
+    this.resumeGame();
+    this._restartGame();
+  }
+
+  _quitToMenu() {
+    this.resumeGame();
+    this.returnToMenu();
+  }
+
+  _updatePauseCameraBtnText() {
+    if (!this.btnPauseCamera || !this.cameraController) return;
+    const mode = this.cameraController.cameraMode || 'fixed';
+    if (mode === 'fixed') {
+      this.btnPauseCamera.textContent = 'CAMERA: NORTH-UP (FIXED)';
+    } else {
+      this.btnPauseCamera.textContent = 'CAMERA: FOLLOW ROTATION';
+    }
+  }
+
   // G4: Execute the currently unlocked ability
   _useAbility() {
     if (!this._currentAbility || this._abilityCooldown > 0) return;
@@ -1696,7 +1904,6 @@ class GameApp {
     if (!pz) return;
 
     if (this._currentAbility === 'aoe_burst') {
-      // Infect all civilians within 8m
       for (let i = this.entityManager.civilians.length - 1; i >= 0; i--) {
         const c = this.entityManager.civilians[i];
         if (c.hidden) continue;
@@ -1712,7 +1919,6 @@ class GameApp {
       this.cameraController.triggerShake(0.5, 0.4);
       this._abilityCooldown = 12.0;
     } else if (this._currentAbility === 'fear_wave') {
-      // Stun all hazmats for 4 seconds
       for (const h of this.entityManager.hazmats) {
         h.stunTimer = 4.0;
       }
@@ -1746,40 +1952,12 @@ class GameApp {
     const success = this.entityManager.triggerFrenzy();
     if (success) {
       this._showToast('⚡ FRENZY ACTIVE!');
-      // V6: Trigger screen shake on frenzy
       this.cameraController.triggerShake(0.35, 0.55);
       this.audioSystem.playFrenzyBurst();
-      // Boost bloom briefly
       if (this.bloomPass) {
         this.bloomPass.strength = 1.2;
         setTimeout(() => { if (this.bloomPass) this.bloomPass.strength = 0.55; }, 600);
       }
-    }
-  }
-
-  _onSqueezeChange(active) {
-    if (!this.entityManager) return;
-    this.entityManager.setSqueeze(active);
-    if (window.__GAME_STATE__) {
-      window.__GAME_STATE__.isSqueeze = !!active;
-    }
-    if (active) {
-      this.audioSystem.playSqueezeWhoosh();
-      this.inputController.vibrate([15, 10, 15]);
-      this._showToast('🏹 SWARM SQUEEZED!');
-    }
-  }
-
-  _onPhalanxChange(active) {
-    if (!this.entityManager) return;
-    this.entityManager.setPhalanx(active);
-    if (window.__GAME_STATE__) {
-      window.__GAME_STATE__.isPhalanx = !!active;
-    }
-    if (active) {
-      if (this.audioSystem && this.audioSystem.playSqueezeWhoosh) this.audioSystem.playSqueezeWhoosh();
-      this.inputController.vibrate([25, 15, 25]);
-      this._showToast('🛡️ PHALANX FORMATION ACTIVATED!');
     }
   }
 
@@ -2165,10 +2343,11 @@ class GameApp {
     this.lastTime = currentTime;
     const timeSec = currentTime / 1000;
 
-    // In STATE_MENU or when choosing mutation: Simulation paused, render idle backdrop
-    if (this.gameState === 'STATE_MENU' || this.isMutationSelecting) {
+    // In STATE_MENU, when paused, or when choosing mutation: Simulation paused, render idle backdrop
+    if (this.gameState === 'STATE_MENU' || this.isPaused || this.isMutationSelecting) {
       if (window.__GAME_STATE__) {
         window.__GAME_STATE__.gameState = this.gameState;
+        window.__GAME_STATE__.isPaused = !!this.isPaused;
         window.__GAME_STATE__.isMutationSelecting = !!this.isMutationSelecting;
       }
       this._updateHUD(0);
@@ -2185,19 +2364,10 @@ class GameApp {
         this.peakHorde = curHorde;
       }
 
-      // Time Attack countdown timer (@designer)
+      // Time Attack countdown timer (@designer & @qa)
       if (this.activeGameMode !== 'endless' && this.timeAttackTimer > 0) {
         this.timeAttackTimer = Math.max(0, this.timeAttackTimer - dt);
-        if (this.hudTimeAttackVal) {
-          const mins = Math.floor(this.timeAttackTimer / 60);
-          const secs = Math.floor(this.timeAttackTimer % 60);
-          this.hudTimeAttackVal.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-          if (this.timeAttackTimer <= 10) {
-            this.hudTimeAttackVal.classList.add('critical');
-          } else {
-            this.hudTimeAttackVal.classList.remove('critical');
-          }
-        }
+        this._updateTimeAttackDisplay();
         if (this.timeAttackTimer <= 0) {
           this.timeAttackTimer = 0;
           this.entityManager.onGameOver('TIME_ATTACK_SURVIVED');
@@ -2306,9 +2476,9 @@ class GameApp {
       this.audioSystem.update(panic);
     }
 
-    // 5. Dynamic camera zoom (with +40% dynamic zoom out for Titan Zombie)
+    // 5. Dynamic camera zoom (with +40% dynamic zoom out for Titan Zombie) & building obstacle clearance
     const totalSwarm = this.entityManager.zombies.length + 1;
-    this.cameraController.update(this.entityManager.patientZero, totalSwarm, dt, this.entityManager.isTitan);
+    this.cameraController.update(this.entityManager.patientZero, totalSwarm, dt, this.entityManager.isTitan, this.spatialGrid);
 
     // 6. Camera building occlusion raycasting & transparency fading
     if (this.entityManager.patientZero) {
@@ -2584,8 +2754,9 @@ class GameApp {
       window.__GAME_STATE__.wardensSilenced = this.wardensSilencedCount || 0;
       window.__GAME_STATE__.civiliansSlipped = this.civiliansSlippedCount || 0;
       window.__GAME_STATE__.slimePuddlesActive = this.entityManager.slimeTrail ? this.entityManager.slimeTrail.length : 0;
-      window.__GAME_STATE__.isSqueeze = !!this.entityManager.isSqueeze;
-      window.__GAME_STATE__.isPhalanx = !!this.entityManager.isPhalanx;
+      window.__GAME_STATE__.isSqueeze = false;
+      window.__GAME_STATE__.isPhalanx = false;
+      window.__GAME_STATE__.isPaused = !!this.isPaused;
       window.__GAME_STATE__.panicLevel = Math.round((this.entityManager.panicLevel || 0) * 100) / 100;
       window.__GAME_STATE__.mutations = this.entityManager.mutations || { acidicBlood: false, bruteBone: false, hyperInfectious: false };
       window.__GAME_STATE__.helicoptersActive = this.entityManager.helicopters ? this.entityManager.helicopters.length : 0;

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.0] - 2026-10-01 — "QA Overhaul: Time Attack Countdown, In-Game Pause, Camera & Threat Telegraphs"
+
+### Fixed — Critical Gameplay & UI Polish (@designer, @artist & @qa)
+- **Time Attack Countdown Timer & Flow** (`index.html`, `main.js`):
+  - Fixed HUD element selector alias (`#hud-time-attack-val` / `#time-attack-val`) so timer ticks down properly from selected duration (2/5/10 min).
+  - Wired countdown progress bar fill and formatted MM:SS display.
+  - Reaching 00:00 triggers `TIME_ATTACK_SURVIVED` game-over flow with +25% survival score bonus and leaderboard entry.
+  - Hidden cleanly in Endless mode.
+- **"Alone & Hunted" Banner State Management** (`EntityManager.js`, `main.js`, `style.css`):
+  - Initialized countdown strictly to 10.0s and tied banner visibility exclusively to zero active followers during active play.
+  - Fixed banner leaking onto main menu demo/attract simulation.
+  - Instantly clears banner and resets countdown the moment an infection lands.
+- **Mutation Lab Modal Stacking & Accessibility** (`style.css`, `main.js`, `index.html`):
+  - Raised `#lab-modal` to `z-index: 1000001` so it renders above the main menu (`99999`).
+  - Unified open/close toggles and guaranteed "APPLY & RETURN" button is reachable and visible.
+- **Frenzy Ability Button Icon** (`style.css`):
+  - Added complete CSS rules for `.frenzy-btn-inner`, `.frenzy-icon`, and `.frenzy-label`, restoring flame icon and hotkey label.
+- **Camera Near-Plane & Building Translucency** (`CameraController.js`, `CityChunk.js`):
+  - Reduced `camera.near` to `0.1` and elevated base camera height above rooftop bounding boxes (24.5m - 27.5m).
+  - Added spatial grid obstacle avoidance to eliminate black void clipping into building geometries.
+  - Split chunk buildings into individual meshes in `CityChunk.js` so only the occluding building turns translucent rather than an entire city block.
+- **In-Game Pause, Restart, and Quit Menu** (`index.html`, `style.css`, `main.js`, `InputController.js`):
+  - Added `#pause-modal` dialog and HUD pause button (`#btn-pause-toggle` ⏸️).
+  - Wired `Escape`, `KeyP` (pause toggle), `KeyR` (restart run), and `KeyQ` (quit to menu).
+  - Quitting mid-game cleanly stops the simulation, flushes entities, and returns to the main menu.
+- **Dev Cheats & Telemetry Panel Gated** (`style.css`, `main.js`):
+  - Hidden `#debug-drawer` by default in production builds. Accessible only via `?dev=true`, `localStorage`, `Ctrl+Shift+D`, or `window.__ENABLE_DEV_MODE()`.
+- **Rules Text Alignment** (`index.html`):
+  - Updated How-to-Play modal to reflect 2, 5, and 10-minute Time Attack modes and removed outdated 90s clock and squeeze/phalanx references.
+- **Infection Reach & Forgivingness** (`EntityManager.js`):
+  - Increased civilian infection reach from 0.15 to 0.55.
+  - Added continuous swept segment collision to prevent fast-moving tunneling.
+  - Added magnetic assist nudging Patient Zero toward nearby fleeing civilians within 3.5m.
+- **Camera Auto-Rotation Options** (`CameraController.js`, `main.js`):
+  - Defaulted camera to Fixed North-Up mode.
+  - Added toggle between Fixed and Follow Rotation in the Pause Menu and via `C` key.
+- **Military Threat Telegraphing & Readability** (`EntityManager.js`, `InstancedRenderer.js`, `AudioSystem.js`):
+  - Tightened rifle aim duration to 1.05s (0.75s in late stages) with 1.6s cooldown.
+  - Added animated red circular lock-on reticles under targeted zombies that shrink during aim charge.
+  - Added procedural audio telegraph warning chirp on lock-on.
+- **Removed Squeeze & Phalanx Abilities** (`index.html`, `style.css`, `InputController.js`, `main.js`, `EntityManager.js`):
+  - Removed `#btn-squeeze` and `#btn-phalanx` buttons, control bindings, and UI helpers.
+  - Updated tank destruction mechanics to trigger on Titan ram or 40+ swarm overrun.
+
+---
+
 ## [2.12.3] - 2026-09-15 — "Threat Escalation: Devastating Helicopter Airstrikes & Armored Tank Shells"
 
 ### Changed — Threat & Impact Escalation (@designer, @artist & @qa)

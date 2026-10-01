@@ -1087,6 +1087,7 @@ export class CityChunk {
     // Commercial glass storefronts can be breached by Titan or 20+ horde (@designer)
     const isStorefront = (bWidth >= 10 && bDepth >= 10 && this.rng() < 0.35);
 
+    const estHeight = b.forceSkyscraper ? 24.0 : 18.0;
     this.obstacles.push({
       minX: b.minX,
       maxX: b.maxX,
@@ -1096,13 +1097,32 @@ export class CityChunk {
       centerZ: bCenterZ,
       halfW: bWidth * 0.5,
       halfD: bDepth * 0.5,
+      height: estHeight,
       isStorefront,
       breached: false,
     });
 
-    // Generate hand-made stylized cartoon building with 2-3 stepped stories,
-    // roof parapets/ledges with contrasting trim, and simple grid windows (pale yellow/blue panes)
-    this._buildCartoonBuilding(bCenterX, bCenterZ, bWidth, bDepth, b.forceSkyscraper, buildingGeoms);
+    // Generate hand-made stylized cartoon building with 2-3 stepped stories into individual building mesh
+    const singleBuildingGeoms = [];
+    this._buildCartoonBuilding(bCenterX, bCenterZ, bWidth, bDepth, b.forceSkyscraper, singleBuildingGeoms);
+
+    if (singleBuildingGeoms.length > 0) {
+      const merged = safeMergeGeometries(singleBuildingGeoms, true);
+      if (merged) {
+        merged.computeVertexNormals();
+        merged.computeBoundingBox();
+        merged.computeBoundingSphere();
+        const buildingMesh = new THREE.Mesh(merged, this.materials.building.clone());
+        buildingMesh.castShadow = true;
+        buildingMesh.receiveShadow = true;
+        buildingMesh.userData = {
+          isBuilding: true,
+          bounds: { minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, centerX: bCenterX, centerZ: bCenterZ, height: estHeight }
+        };
+        this.meshes.push(buildingMesh);
+        this.buildingMeshes.push(buildingMesh);
+      }
+    }
   }
 
   _buildCartoonBuilding(cx, cz, bWidth, bDepth, forceSkyscraper, buildingGeoms) {

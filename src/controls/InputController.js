@@ -13,6 +13,11 @@ export class InputController {
     this.phalanxBtn = phalanxBtnElement;
     this.isPhalanx = false;
 
+    // Pause, Restart & Quit hooks
+    this.onPauseToggle = null;
+    this.onRestart = null;
+    this.onQuit = null;
+
     // Movement vector output: { x, z } in range [-1, 1]
     this.inputVector = { x: 0, z: 0 };
 
@@ -200,11 +205,15 @@ export class InputController {
       if (this.keys.hasOwnProperty(e.code)) {
         this.keys[e.code] = true;
       }
-      if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-        this.setSqueeze(true);
+      if (e.code === 'Escape' || e.code === 'KeyP') {
+        e.preventDefault();
+        if (this.onPauseToggle) this.onPauseToggle();
       }
-      if (e.code === 'KeyX' || e.key === 'x' || e.key === 'X' || e.code === 'KeyF' || e.key === 'f' || e.key === 'F') {
-        this.setPhalanx(true);
+      if (e.code === 'KeyR') {
+        if (this.onRestart) this.onRestart();
+      }
+      if (e.code === 'KeyQ') {
+        if (this.onQuit) this.onQuit();
       }
       if (e.code === 'Space') {
         e.preventDefault();
@@ -225,12 +234,6 @@ export class InputController {
     window.addEventListener('keyup', (e) => {
       if (this.keys.hasOwnProperty(e.code)) {
         this.keys[e.code] = false;
-      }
-      if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-        this.setSqueeze(false);
-      }
-      if (e.code === 'KeyX' || e.key === 'x' || e.key === 'X' || e.code === 'KeyF' || e.key === 'f' || e.key === 'F') {
-        this.setPhalanx(false);
       }
     });
 
