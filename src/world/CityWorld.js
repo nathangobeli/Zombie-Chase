@@ -87,25 +87,25 @@ export class CityWorld {
     });
 
     this.parkGrassMat = new THREE.MeshStandardMaterial({
-      color: 0x14532d,
-      roughness: 0.85,
+      color: 0x22c55e,
+      roughness: 0.78,
       metalness: 0.05,
     });
 
     this.interiorFloorMat = new THREE.MeshStandardMaterial({
       map: this.textures.interiorFloor,
-      emissive: 0x334155,
+      emissive: 0x64748b,
       emissiveMap: this.textures.interiorFloor,
-      emissiveIntensity: 0.58,
+      emissiveIntensity: 0.35,
       roughness: 0.32,
-      metalness: 0.15,
+      metalness: 0.1,
     });
 
     this.cutawayWallMat = applyBuildingCutawayShader(
       new THREE.MeshStandardMaterial({
-        color: 0x27303f,
-        roughness: 0.6,
-        metalness: 0.2,
+        color: 0x64748b,
+        roughness: 0.55,
+        metalness: 0.15,
       }),
       { enableProceduralWindows: true }
     );

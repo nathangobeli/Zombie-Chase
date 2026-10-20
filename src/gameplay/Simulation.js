@@ -254,23 +254,28 @@ export class Simulation {
     return true;
   }
 
-  triggerSurge(targetX, targetZ) {
+  triggerSurge(targetX, targetZ, useForwardDirection = false) {
     if (this.surgeState.cooldown > 0) return false;
 
     const pz = this.patientZero;
     let tx = targetX;
     let tz = targetZ;
 
-    if (!Number.isFinite(tx) || !Number.isFinite(tz) || (tx === 0 && tz === 0)) {
-      tx = pz.x + Math.sin(pz.heading) * 16;
-      tz = pz.z + Math.cos(pz.heading) * 16;
+    if (
+      useForwardDirection ||
+      !Number.isFinite(tx) ||
+      !Number.isFinite(tz) ||
+      (tx === 0 && tz === 0)
+    ) {
+      tx = pz.x + Math.sin(pz.heading) * 14;
+      tz = pz.z + Math.cos(pz.heading) * 14;
     }
 
     this.surgeState.active = true;
     this.surgeState.tx = tx;
     this.surgeState.tz = tz;
-    this.surgeState.timer = 4.2;
-    this.surgeState.cooldown = 4.8;
+    this.surgeState.timer = 4.0;
+    this.surgeState.cooldown = 4.5;
 
     for (let i = 0; i < this.zombies.length; i++) {
       const z = this.zombies[i];
@@ -279,9 +284,8 @@ export class Simulation {
       }
     }
 
-    this.vfx.spawnShockwave(tx, tz, 0xf43f5e, 6.0, 0.45);
+    this.vfx.spawnShockwave(tx, tz, 0xf59e0b, 4.5, 0.4);
     if (this.audio) this.audio.playSurgeCommand();
-    this.pushRadioAlert('HORDE SURGE DIRECTED TO TARGET VECTOR!', 'amber');
     return true;
   }
 
@@ -496,6 +500,15 @@ export class Simulation {
     if (this.audio) this.audio.playInfect();
 
     this.spawnZombie(h.x, h.z);
+
+    // Automatic Mobile-Friendly Caste Evolution every 8 infections!
+    if (this.totalInfected % 8 === 0) {
+      const cycle = Math.floor(this.totalInfected / 8) % 3;
+      const bonusCaste = cycle === 0 ? 'brute' : cycle === 1 ? 'leaper' : 'spitter';
+      this.upgrades[bonusCaste]++;
+      this.spawnZombie(this.patientZero.x + 1.5, this.patientZero.z + 1.5, bonusCaste);
+      if (this.audio) this.audio.playEvolutionChord();
+    }
 
     const newThreat = Math.min(5, 1 + Math.floor(this.totalInfected / 18));
     if (newThreat > this.threatLevel) {

@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 
 /**
- * Unified Input Manager for Keyboard, Mouse World-Raycasting, and Touch Controls.
- * Supports Active Horde Command (Right-Click / Q Surge, E Formation, Space Frenzy, 1-4 Evolution, B Boss, M Lab).
+ * Mobile-First Input Manager with Visual Touch Joystick + Keyboard/Mouse support.
  */
 export class InputManager {
   constructor(camera, domElement) {
@@ -21,18 +20,19 @@ export class InputManager {
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     // Action callbacks
-    this.onFrenzy = null;       // Spacebar
-    this.onSurge = null;        // Right-Click or Q
-    this.onFormation = null;    // E key
-    this.onEvolve = null;       // 1, 2, 3, 4 keys
-    this.onLightingMode = null; // N key
-    this.onSummonBoss = null;   // B key
-    this.onToggleLab = null;    // M key
+    this.onFrenzy = null;
+    this.onSurge = null;
+    this.onFormation = null;
+    this.onLightingMode = null;
 
-    // Virtual joystick / pointer drag support
+    // Touch / drag virtual joystick state
     this.touchActive = false;
+    this.touchPointerId = null;
     this.touchOrigin = { x: 0, y: 0 };
     this.touchDelta = { x: 0, y: 0 };
+
+    this.joyBaseEl = document.getElementById('touch-joystick-base');
+    this.joyKnobEl = document.getElementById('touch-joystick-knob');
 
     this._bindEvents();
   }
@@ -48,24 +48,12 @@ export class InputManager {
         if (this.onFrenzy) this.onFrenzy();
       } else if (code === 'KeyQ') {
         e.preventDefault();
-        if (this.onSurge) this.onSurge(this.cursorWorld.x, this.cursorWorld.z, true);
+        if (this.onSurge) this.onSurge(0, 0, true);
       } else if (code === 'KeyE') {
         e.preventDefault();
         if (this.onFormation) this.onFormation();
-      } else if (code === 'Digit1') {
-        if (this.onEvolve) this.onEvolve('leaper');
-      } else if (code === 'Digit2') {
-        if (this.onEvolve) this.onEvolve('brute');
-      } else if (code === 'Digit3') {
-        if (this.onEvolve) this.onEvolve('spitter');
-      } else if (code === 'Digit4') {
-        if (this.onEvolve) this.onEvolve('alpha');
       } else if (code === 'KeyN') {
         if (this.onLightingMode) this.onLightingMode();
-      } else if (code === 'KeyB') {
-        if (this.onSummonBoss) this.onSummonBoss();
-      } else if (code === 'KeyM') {
-        if (this.onToggleLab) this.onToggleLab();
       }
     });
 
@@ -75,51 +63,76 @@ export class InputManager {
 
     window.addEventListener('blur', () => {
       this.keys.clear();
-      this.touchActive = false;
-    });
-
-    this.domElement.addEventListener('pointermove', (e) => {
-      const rect = this.domElement.getBoundingClientRect();
-      this.cursorNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      this.cursorNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      this._updateWorldCursor();
-
-      if (this.touchActive) {
-        const dx = e.clientX - this.touchOrigin.x;
-        const dy = e.clientY - this.touchOrigin.y;
-        const maxR = 48;
-        this.touchDelta.x = Math.max(-1, Math.min(1, dx / maxR));
-        this.touchDelta.y = Math.max(-1, Math.min(1, dy / maxR));
-      }
+      this._endTouch();
     });
 
     this.domElement.addEventListener('pointerdown', (e) => {
-      const rect = this.domElement.getBoundingClientRect();
-      this.cursorNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      this.cursorNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      this._updateWorldCursor();
-
-      if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+      if (e.button === 2) {
         e.preventDefault();
-        if (this.onSurge) {
-          this.onSurge(this.cursorWorld.x, this.cursorWorld.z, true);
-        }
-      } else if (e.pointerType === 'touch' || e.button === 0) {
-        this.touchActive = true;
-        this.touchOrigin.x = e.clientX;
-        this.touchOrigin.y = e.clientY;
-        this.touchDelta.x = 0;
-        this.touchDelta.y = 0;
+        const rect = this.domElement.getBoundingClientRect();
+        this.cursorNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this.cursorNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        this._updateWorldCursor();
+        if (this.onSurge) this.onSurge(this.cursorWorld.x, this.cursorWorld.z, false);
+        return;
+      }
+
+      this.touchActive = true;
+      this.touchPointerId = e.pointerId;
+      this.touchOrigin.x = e.clientX;
+      this.touchOrigin.y = e.clientY;
+      this.touchDelta.x = 0;
+      this.touchDelta.y = 0;
+
+      if (this.joyBaseEl && this.joyKnobEl) {
+        this.joyBaseEl.style.left = `${e.clientX}px`;
+        this.joyBaseEl.style.top = `${e.clientY}px`;
+        this.joyKnobEl.style.transform = `translate(0px, 0px)`;
+        this.joyBaseEl.classList.remove('hidden');
       }
     });
 
-    window.addEventListener('pointerup', () => {
-      this.touchActive = false;
-      this.touchDelta.x = 0;
-      this.touchDelta.y = 0;
+    window.addEventListener('pointermove', (e) => {
+      if (!this.touchActive || e.pointerId !== this.touchPointerId) return;
+      const dx = e.clientX - this.touchOrigin.x;
+      const dy = e.clientY - this.touchOrigin.y;
+      const maxR = 42;
+      const dist = Math.hypot(dx, dy);
+      const clampedDist = Math.min(maxR, dist);
+      const angle = Math.atan2(dy, dx);
+
+      const kx = Math.cos(angle) * clampedDist;
+      const ky = Math.sin(angle) * clampedDist;
+
+      this.touchDelta.x = kx / maxR;
+      this.touchDelta.y = ky / maxR;
+
+      if (this.joyKnobEl) {
+        this.joyKnobEl.style.transform = `translate(${kx}px, ${ky}px)`;
+      }
+    });
+
+    window.addEventListener('pointerup', (e) => {
+      if (e.pointerId === this.touchPointerId) {
+        this._endTouch();
+      }
+    });
+
+    window.addEventListener('pointercancel', () => {
+      this._endTouch();
     });
 
     this.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  _endTouch() {
+    this.touchActive = false;
+    this.touchPointerId = null;
+    this.touchDelta.x = 0;
+    this.touchDelta.y = 0;
+    if (this.joyBaseEl) {
+      this.joyBaseEl.classList.add('hidden');
+    }
   }
 
   _updateWorldCursor() {
@@ -130,8 +143,6 @@ export class InputManager {
   }
 
   update() {
-    this._updateWorldCursor();
-
     let mx = 0;
     let mz = 0;
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) mz -= 1;
@@ -139,7 +150,7 @@ export class InputManager {
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mx -= 1;
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mx += 1;
 
-    if (this.touchActive && (Math.abs(this.touchDelta.x) > 0.08 || Math.abs(this.touchDelta.y) > 0.08)) {
+    if (this.touchActive && Math.hypot(this.touchDelta.x, this.touchDelta.y) > 0.08) {
       mx += this.touchDelta.x;
       mz += this.touchDelta.y;
     }
