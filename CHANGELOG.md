@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.0] - 2026-10-20 — "Outbreak Protocol: Full v3.0 Modular Rebuild, 3D Kenney City, Evolved Horde Castes & Active Command"
+
+### Added — Gameplay, Evolved Horde Castes & Active Command (`src/gameplay/Simulation.js`, `src/world/BossAndChopperSystem.js`, `src/world/CityWorld.js`)
+- **4 Distinct Evolving Zombie Castes** (`src/rendering/CharacterMeshes.js`, `src/rendering/HordeInstancer.js`):
+  - **Shambler Walkers (`walker`)**: Core flocking swarm units that encircle prey.
+  - **Crimson Leapers (`leaper` — Key `1`)**: Agile hunters with crimson dorsal spines that execute parabolic 3D airborne pounces onto fleeing Sprinters, Police, and Snipers.
+  - **Juggernaut Brutes (`brute` — Key `2`)**: 1.65x armored tanks that shatter glass storefronts on contact, absorb sniper fire, and flip oncoming cars and military APCs into the air.
+  - **Volatile Spitters (`spitter` — Key `3`)**: Bio-artillery mutants with pulsing dorsal acid sacs that lob arcing acid globules and rupture into **Infectious Bio-Spore Clouds**.
+- **Active Horde Surge Command (`Right-Click` / `Q`) & 3 Tactical Formations (`E`)**:
+  - Directs front-line castes toward your 3D ground cursor target (`+38%` speed) with a holographic target beacon.
+  - Switch between **`SWARM`**, **`SHIELD WALL`** (Brutes form a protective front vanguard reducing ballistic damage by 60%), and **`PINCER SPLIT`** (twin flanking wings).
+- **Walkable, Breachable Ground-Floor Interiors & 4 Urban District Biomes** (`src/world/CityWorld.js`):
+  - Hollow ground-floor interiors (**BioCorp Lab**, **Metro Pharmacy**, **Cyber Mall**, **Precinct Armory**) built with 4 separate perimeter wall colliders, shatterable glass storefronts, and interior **DNA Mutagen Canisters (`+25 DNA`)**.
+  - Streaming sectors transition across **Downtown Financial Core**, **Bio-Research Quarantine Zone**, **Central Evacuation Plaza** (open turf park with Kenney café parasols and fountain), and **Military Lockdown Sector**.
+- **Multi-Phase Boss & Volumetric Searchlight Helicopter** (`src/world/BossAndChopperSystem.js`):
+  - **Hunter-Killer Titan Mech-APC (`[B]` Key or Threat Level 3+)**: Twin plasma cannons, telegraphed red mortar danger zones, and Phase 2 Overdrive ramming charges.
+  - **Patrol Helicopter**: Overhead volumetric searchlight cone and tracking spotlight ring.
+- **Viral Chain Combo Multiplier (`x1`–`x10`) & Persistent Genome Mutation Lab (`[M]` Key)**:
+  - Rapid infections build a Viral Chain multiplier for bonus DNA and score; `[M]` opens the `localStorage`-backed Genome Mutation Lab.
+
+### Added — Graphics, Shaders & Decluttered Peripheral HUD (`src/rendering/`, `src/fx/VFXManager.js`, `src/ui/TacticalHUD.js`)
+- **Activated Kenney `.glb` 3D Architecture + Screen-Space Bayer Dither Cutaway Shader** (`src/rendering/CutawayShader.js`):
+  - Mounted the 21 Kenney `.glb` building, skyscraper, and parasol models with a custom 4x4 Ordered Bayer Screen-Space Dither Cutaway shader so upper stories (`y > 2.35m`) smoothly dissolve when Patient Zero walks behind or inside them—eliminating alpha-sorting artifacts.
+- **Procedural PBR Textures, Pooled Streetlamp Lighting & Sobel Edge Shader** (`src/rendering/ProceduralTextures.js`, `src/main.js`):
+  - Wet asphalt with glossy rain-puddle roughness maps, tiled concrete sidewalks, checkered interior floors, a unified pool of 6 nearest streetlamp `PointLight`s, and a 4-tap Sobel Luma Micro-Edge & Cavity post-processing pass.
+- **3D Tumbling Physics Ragdolls & Dual-Pass GPU Particles** (`src/fx/VFXManager.js`):
+  - Full 3D tumbling ragdoll pool on vehicle/explosion/sniper kills, additive HDR sparks, alpha-fading smoke/spore billboards, and persistent ground blood/bio-slime decals.
+- **Decluttered Peripheral Tactical HUD & Live Radar** (`src/ui/TacticalHUD.js`, `index.html`, `src/style.css`):
+  - Removed center-screen banner clutter in favor of peripheral glassmorphic panels, live 2D radar minimap, and non-intrusive radio ticker.
+
+---
+
+## [2.14.0] - 2026-10-02 — "Gameplay & Visual Enhancements: Viral Chains, Archetypes, Formations & Hunter-Killer Boss"
+
+### Added — Gameplay Innovations & Combat Dynamics (@designer, @artist & @lead)
+- **Viral Chain Infections (Self-Propagating Epidemic)** (`src/entities/EntityManager.js`, `src/rendering/InstancedRenderer.js`):
+  - Newly turned zombies now retain an active 8.0-second virulence window (`chainVirulentTimer`), enabling them to infect civilians on physical proximity contact without requiring direct player tagging.
+  - Rendered with an animated, pulsing lime-green virulent aura ring (`virulentAuraMesh`) under virulent zombies that smoothly scales and fades as the virulence window expires.
+  - Balanced with `chainSpeedFactor: 0.85` so chained infected move slightly slower than Patient Zero's vanguard, ensuring the player remains the strategic driver and nucleus of the outbreak.
+- **Civilian Archetypes with Distinct Silhouettes & Roles** (`src/rendering/CharacterGeometry.js`, `src/rendering/InstancedRenderer.js`, `src/entities/EntityManager.js`):
+  - **Sprinter**: Speedster equipped with athletic headband, neon yellow singlet, running shorts, and sneakers. Flees at 6.8+ m/s, requiring pack ambushes or FRENZY to catch early-game. Awards +25 bonus points.
+  - **Police Officer (Cop)**: Armed officer wearing a dark navy peaked cap, service uniform, duty belt, and sidearm holster. Periodically draws a bead on horde members with an intense red laser sight telegraph (`copLasers`) before firing lethal shots that kill zombies on cooldown. Awards +50 bonus points.
+  - **Toxic Carrier**: Rare biohazard civilian clad in glowing emerald scrubs with a respirator mask, bioluminescent hazard aura (`carrierAuraMesh`), and billboard biohazard icon badge (`carrierBadgeSprites`). Infecting a Carrier triggers an immediate 5-meter bio-burst detonation, instantly converting all nearby humans and triggering screen shake.
+  - Instanced renderer expanded from 6 to 9 distinct civilian variants (draw calls unified into instanced batching).
+- **FRENZY Combo Multiplier & Live HUD Meter** (`src/entities/EntityManager.js`, `src/main.js`, `index.html`, `src/style.css`):
+  - Infections chained during FRENZY build an escalating score multiplier (x2, x3, x4... up to x10).
+  - Shown live in the HUD via a pulsing flame badge (`#hud-frenzy-combo`) with numeric multiplier readout (`#frenzy-combo-val`) and rapid 3-second depletion progress bar (`#frenzy-combo-fill`). Failing to infect within 3 seconds resets the multiplier.
+- **Horde Commands: Scatter & Regroup Formations** (`src/ai/Boids.js`, `src/controls/InputController.js`, `src/entities/EntityManager.js`, `src/main.js`, `index.html`, `src/style.css`):
+  - **Key 1 (SCATTER)**: Horde fans out into an expansive 9.0-meter perimeter with tangential swirling drift, ideal for encircling large groups and cutting off escaping Sprinters.
+  - **Key 2 (REGROUP)**: Horde condenses tightly into a 1.2-meter defensive cluster directly around Patient Zero, allowing swift navigation through narrow alleyways and dodging airstrikes.
+  - Formations can be toggled via hotkeys (`1` / `2`) or interactive HUD buttons in the `#hud-formation` widget.
+- **Escalation Boss: Hunter-Killer Armored Vehicle** (`src/entities/EntityManager.js`, `src/rendering/InstancedRenderer.js`, `src/main.js`, `index.html`, `src/style.css`):
+  - Spawns automatically above 70% panic (or manually via the dev cheats panel).
+  - Features heavy tactical charcoal hull, hazard chevrons, armored plow, crawler treads, spinning searchlight turret, hazard strobe beacon, and a red 45-degree telegraphed forward attack cone (`bossAttackConeMesh`).
+  - Pursues Patient Zero at 5.4 m/s; decimates any horde zombies caught in its sweeping kill-zone cone.
+  - Requires 10 horde zombie collisions (or 1 FRENZY ram) to demolish.
+  - Destruction triggers slow-motion shockwave, camera trauma shake, floating combat text (`DEFEATED! -15% PANIC`), awards +1000 score, and lowers city panic by 15%.
+
+### Added — Visual Polish, Atmospheric Night Mode & Combat Feedback (@artist & @designer)
+- **Infection Transformation Ceremony** (`src/entities/EntityManager.js`, `src/rendering/InstancedRenderer.js`):
+  - Civilians now undergo visible transformation ceremony upon contact: initial green pallor, eyes flaring with luminous lime-green fire, squash-and-stretch volume warp, and an explosive 10-droplet cartoon slime splash.
+- **Floating Combat Text & Live Kill Feed** (`src/main.js`, `src/style.css`, `index.html`):
+  - "+1" popups float above every infected victim with directional drift.
+  - Kill feed (`#kill-feed`) in top-left feeds live combat events: standard civilian infections, viral chains, sprinter takedowns, cop takedowns, carrier bio-bursts, and boss eliminations.
+- **Milestone Camera Shake & Slow-Motion Engine** (`src/main.js`, `src/entities/EntityManager.js`):
+  - Integrated `triggerSlowMo(scale, duration)` system with smooth simulation delta interpolation (`simDt = dt * this._slowMoScale`).
+  - Fires cinematic 0.35x slow-mo on 50/100 horde milestones, near-miss airstrikes, and Hunter-Killer boss detonations.
+- **Atmospheric Night Mode Option** (`src/main.js`, `src/style.css`, `index.html`):
+  - Added `#btn-toggle-night` button (hotkey `N`) to toggle between daytime arcade lighting and atmospheric noir night mode.
+  - Night mode dynamically adjusts ambient illumination to deep midnight navy (`#0d1117`), drops directional sunlight to moonlight cyan (`#1e293b`), illuminates warm sodium streetlights across road junctions, lights procedural building windows with HDR bloom emission (0.65+), and intensifies radioactive green glows on mutations and virulent auras.
+- **How-to-Play Rules Modal Expansion** (`index.html`):
+  - Added comprehensive illustrated strategy guides for Viral Chains, Civilian Archetypes (Sprinter, Cop, Carrier), FRENZY Combo Multipliers, Horde Formations (Scatter vs Regroup), and Hunter-Killer Boss tactics.
+
+---
+
+## [2.13.1] - 2026-10-02 — "Retest Fixes: Mode Plumbing, Timer Visibility, Banner Isolation & Visual Identity"
+
+### Fixed — Critical Gameplay & UI Polish (@designer, @artist & @qa)
+- **Game-Mode Selection Plumbing & Pause Menu Readout** (`src/main.js`, `index.html`):
+  - Fixed disconnect between UI mode pills and engine state: Start button explicitly queries the active DOM pill (`.mode-pill.active`), ensuring the selected mode starts reliably every time.
+  - Replaced hardcoded "TIME ATTACK" placeholder in `#pause-mode-badge` with dynamic synchronization (`_updatePauseModeBadges()`), accurately displaying `ENDLESS`, `TIME ATTACK: 2 MIN`, `TIME ATTACK: 5 MIN`, or `TIME ATTACK: 10 MIN`.
+  - Added dynamic severity synchronization for `#pause-diff-badge` (`CASUAL`, `OUTBREAK`, `MARTIAL LAW`).
+- **Time Attack Countdown HUD Visibility** (`src/main.js`, `src/style.css`, `index.html`):
+  - Ensured `#hud-time-attack` countdown card un-hides cleanly with `display: flex;` during Time Attack runs and remains strictly hidden in Endless mode.
+  - Added dedicated flex layout styles to `.time-attack-card` in `style.css` to prevent layout collapse.
+- **Quit-to-Menu Banner & Toast Isolation** (`src/main.js`):
+  - Fixed stale 30% panic escalation toast and stage banners leaking onto the main menu upon pressing `Q` or clicking Quit.
+  - Added comprehensive teardown in `returnToMenu()` and `_restartGame()`: clears `_toastTimeout`, removes `.show` from `#toast-banner`, hides `#stage-banner`, `#quarantine-banner`, and `#alone-warning`, removes all floating combat text elements, and resets panic milestones.
+  - Gated `_showToast()`, `_showStageBanner()`, and `_showQuarantineBanner()` to automatically abort when in `STATE_MENU`.
+- **Megaphone Warden Visual Identity & Combat Indicator Legend** (`src/rendering/InstancedRenderer.js`, `index.html`, `src/style.css`):
+  - Added floating overhead 3D target billboard badges (`📢 WARDEN (RECRUIT)`) above all active Megaphone Wardens with high-visibility safety orange styling so their high-value role is immediately obvious from high isometric angles.
+  - Tuned megaphone soundwave rings to vibrant acoustic amber (`#f59e0b`).
+  - Added a dedicated "MEGAPHONE WARDEN (PRIORITY RECRUIT)" block to the How-to-Play Rules modal, detailing how silencing the megaphone awards +150 bonus points and freezes nearby civilians in fear.
+  - Added a "COMBAT RINGS & VISUAL INDICATORS" section to the Rules modal and an in-pause HUD legend explaining the green heading/infection chevron, red sniper lock-on reticle, and chemical decontamination warning rings.
+
+---
+
 ## [2.13.0] - 2026-10-01 — "QA Overhaul: Time Attack Countdown, In-Game Pause, Camera & Threat Telegraphs"
 
 ### Fixed — Critical Gameplay & UI Polish (@designer, @artist & @qa)

@@ -2,549 +2,216 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Zombie Chase v3.0 — Outbreak Protocol</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- 3D Canvas -->
-    <div id="game-container">
-      <canvas id="game-canvas"></canvas>
+    <canvas id="game-canvas"></canvas>
 
-      <!-- Floating Virtual Joystick -->
-      <div id="joystick-base" class="joystick-base">
-        <div id="joystick-thumb" class="joystick-thumb"></div>
-      </div>
-
-      <!-- Top HUD Header (Essential Telemetry Only: Swarm, Panic, Score) -->
-      <div class="hud-top">
-        <div class="hud-card horde-card">
-          <div class="card-label">SWARM SIZE</div>
-          <div class="card-value-row">
-            <span id="horde-count" class="horde-count">1</span>
-            <span class="horde-label">ZOMBIES</span>
-          </div>
-          <div class="horde-progress-bar">
-            <div id="horde-bar-fill" class="horde-bar-fill"></div>
-          </div>
-        </div>
-
-        <div class="hud-card panic-card">
-          <div class="card-label">CITY PANIC</div>
-          <div class="card-value-row">
-            <span id="panic-val" class="panic-val">0%</span>
-            <span class="panic-icon">⚠️</span>
-          </div>
-          <div class="panic-progress-bar">
-            <div id="panic-bar-fill" class="panic-bar-fill"></div>
+    <!-- PERIPHERAL TACTICAL HUD (Zero Center-Screen Banner Clutter!) -->
+    <div id="hud-root">
+      <!-- TOP-LEFT: Horde Telemetry, District Biome, Viral Combo & Caste Breakdown -->
+      <aside class="hud-panel hud-top-left">
+        <div class="brand-row">
+          <span class="brand-badge">OUTBREAK v3.0</span>
+          <span id="hud-threat-stars" class="threat-stars" title="Military Escalation Level">★☆☆☆☆</span>
+          <div class="top-action-btns">
+            <button id="btn-light-mode" class="light-mode-btn" title="Cycle Lighting Preset (Key N)">
+              [N] BIO-NOIR NIGHT
+            </button>
+            <button id="btn-summon-boss" class="light-mode-btn btn-boss-trigger" title="Deploy Hunter-Killer Titan Boss (Key B)">
+              [B] BOSS
+            </button>
+            <button id="btn-open-lab" class="light-mode-btn btn-lab-trigger" title="Open Persistent Mutation Lab (Key M)">
+              [M] LAB
+            </button>
           </div>
         </div>
 
-        <!-- G1: Score & Combo Display -->
-        <div class="hud-card score-card">
-          <div class="card-label">SCORE</div>
-          <div class="score-value" id="score-val">0</div>
-          <div class="combo-display" id="combo-display"></div>
+        <div class="sector-row">
+          <span id="hud-district-badge" class="district-badge">DOWNTOWN FINANCIAL CORE</span>
+          <span id="hud-combo-badge" class="combo-badge hidden">VIRAL CHAIN x2</span>
         </div>
 
-        <!-- Time Attack Countdown Clock -->
-        <div id="hud-time-attack" class="hud-card time-attack-card hidden">
-          <div class="card-label">TIME REMAINING</div>
-          <div class="card-value-row">
-            <span id="hud-time-attack-val" class="time-attack-val">02:00</span>
-            <span class="time-attack-icon">⏱️</span>
+        <div class="metrics-grid">
+          <div class="metric-card metric-emerald">
+            <span class="metric-label">ACTIVE HORDE</span>
+            <span id="hud-horde-count" class="metric-value">7</span>
           </div>
-          <div class="time-attack-progress-bar">
-            <div id="time-attack-bar-fill" class="time-attack-bar-fill"></div>
+          <div class="metric-card metric-cyan">
+            <span class="metric-label">MUTAGEN DNA</span>
+            <span id="hud-dna-count" class="metric-value">80</span>
+          </div>
+          <div class="metric-card metric-amber">
+            <span class="metric-label">BREACHED</span>
+            <span id="hud-breach-count" class="metric-value">0</span>
+          </div>
+          <div class="metric-card metric-slate">
+            <span class="metric-label">BIOMASS SCORE</span>
+            <span id="hud-score-count" class="metric-value">0</span>
           </div>
         </div>
 
-        <!-- Pause Button -->
-        <button id="btn-pause-toggle" class="hud-pause-btn" title="Pause Game (Esc / P)" aria-label="Pause Game">
-          <span class="pause-icon">⏸️</span>
-        </button>
-      </div>
-
-      <!-- Collapsible Developer / Debug Drawer (Hidden during standard runs) -->
-      <div id="debug-drawer" class="debug-drawer collapsed">
-        <button id="btn-toggle-debug" class="debug-toggle-btn" title="Toggle Developer Tools" aria-label="Toggle Developer Tools">
-          <span class="debug-toggle-icon">🔧</span>
-        </button>
-        <div class="debug-drawer-panel">
-          <div class="debug-drawer-header">
-            <span class="debug-title">⚙️ DEV CHEATS &amp; TELEMETRY</span>
+        <!-- Live Evolved Caste Telemetry Pills -->
+        <div class="caste-strip">
+          <div class="caste-pill caste-walker" title="Standard Shambler Walkers">
+            <span class="caste-dot"></span>
+            <span class="caste-name">WALKERS</span>
+            <strong id="caste-walker-count">3</strong>
           </div>
-          <div class="debug-telemetry-grid">
-            <div class="stat-item">
-              <span class="stat-name">CIVILIANS</span>
-              <span id="civ-count" class="stat-val">50</span>
+          <div class="caste-pill caste-leaper" title="Crimson Leapers — Pounce over obstacles onto sprinters">
+            <span class="caste-dot"></span>
+            <span class="caste-name">LEAPERS</span>
+            <strong id="caste-leaper-count">1</strong>
+          </div>
+          <div class="caste-pill caste-brute" title="Juggernaut Brutes — Smash glass storefronts & flip cars">
+            <span class="caste-dot"></span>
+            <span class="caste-name">BRUTES</span>
+            <strong id="caste-brute-count">1</strong>
+          </div>
+          <div class="caste-pill caste-spitter" title="Volatile Spitters — Lob infectious acid spore artillery">
+            <span class="caste-dot"></span>
+            <span class="caste-name">SPITTERS</span>
+            <strong id="caste-spitter-count">1</strong>
+          </div>
+        </div>
+
+        <!-- Boss Encounter Health Bar (Only visible when Hunter-Killer Titan is active) -->
+        <div id="hud-boss-panel" class="boss-telemetry hidden">
+          <div class="boss-header">
+            <span class="boss-title">HUNTER-KILLER TITAN MECH</span>
+            <span id="hud-boss-hp-text" class="boss-hp-text">PHASE 1 • 1200 HP</span>
+          </div>
+          <div class="boss-bar-track">
+            <div id="hud-boss-bar-fill" class="boss-bar-fill"></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- TOP-RIGHT: Tactical Radar Minimap + Non-Intrusive Comms Ticker -->
+      <aside class="hud-panel hud-top-right">
+        <div class="radar-frame">
+          <canvas id="hud-radar-canvas" width="156" height="156"></canvas>
+          <div class="radar-legend">
+            <span><i class="leg-box leg-room"></i>BREACH LAB/MALL</span>
+            <span><i class="leg-box leg-dna"></i>DNA</span>
+          </div>
+        </div>
+        <div id="hud-radio-feed" class="radio-feed"></div>
+      </aside>
+
+      <!-- PERSISTENT MUTATION LAB MODAL ([M] Key) -->
+      <div id="mutation-lab-modal" class="lab-modal hidden">
+        <div class="lab-card hud-panel">
+          <div class="lab-header">
+            <div>
+              <h2>GENOME MUTATION LAB</h2>
+              <p id="lab-banked-dna" class="lab-dna-sub">200 DNA AVAILABLE</p>
             </div>
-            <div class="stat-item">
-              <span class="stat-name">STRAYS</span>
-              <span id="stray-count" class="stat-val">16</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-name">FPS</span>
-              <span id="fps-val" class="stat-val stat-fps">60</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-name">DRAW</span>
-              <span id="draw-calls" class="stat-val stat-fps">-</span>
-            </div>
+            <button id="btn-close-lab" class="lab-close-btn">✕ ESC</button>
           </div>
-          <div class="debug-btn-grid interactive-hud">
-            <button id="btn-add-civs" class="hud-btn" title="Add 50 Civilians for Swarm Testing">
-              <span class="btn-icon">+50</span>
-              <span class="btn-text">CIVILIANS</span>
+          <div class="lab-grid">
+            <button id="btn-lab-pack" class="lab-upgrade-btn">
+              <strong>BROOD INCUBATION</strong>
+              <span>Spawns extra Crimson Leapers &amp; Juggernaut Brutes at the start of every outbreak</span>
+              <em class="lab-cost">LV.1 • UPGRADE (60 DNA)</em>
             </button>
-            <button id="btn-spawn-hazmat" class="hud-btn hud-btn-warning" title="Spawn Hazmat Enemy">
-              <span class="btn-icon">⚠️</span>
-              <span class="btn-text">HAZMAT</span>
+            <button id="btn-lab-viral" class="lab-upgrade-btn">
+              <strong>VIRAL INCUBATOR</strong>
+              <span>Extends the Viral Chain Combo Multiplier window (+0.8s per level)</span>
+              <em class="lab-cost">LV.1 • UPGRADE (60 DNA)</em>
             </button>
-            <button id="btn-spawn-military" class="hud-btn hud-btn-warning" title="Spawn Military Riflemen">
-              <span class="btn-icon">🎖️</span>
-              <span class="btn-text">MILITARY</span>
-            </button>
-            <button id="btn-spawn-warden" class="hud-btn" style="background: rgba(249, 115, 22, 0.25); border-color: #f97316;" title="Spawn Megaphone Warden">
-              <span class="btn-icon">📢</span>
-              <span class="btn-text">WARDEN</span>
-            </button>
-            <button id="btn-titan" class="hud-btn" style="background: rgba(168, 85, 247, 0.25); border-color: #a855f7;" title="Activate Titan Virus">
-              <span class="btn-icon">☣️</span>
-              <span class="btn-text">TITAN</span>
-            </button>
-            <button id="btn-view-leaderboard" class="hud-btn" style="background: rgba(250, 204, 21, 0.2); border-color: #facc15;" title="View Leaderboard">
-              <span class="btn-icon">🏆</span>
-              <span class="btn-text">SCORES</span>
-            </button>
-            <button id="btn-ability" class="hud-btn hud-btn-ability" title="Use Unlocked Milestone Ability" style="display:none">
-              <span class="btn-icon">💥</span>
-              <span class="btn-text">BURST</span>
-            </button>
-            <button id="btn-joystick-mode" class="hud-btn hud-btn-subtle" title="Toggle Fixed Joystick">
-              <span class="btn-icon">🕹️</span>
-              <span class="btn-text">FLOAT</span>
-            </button>
-            <button id="btn-reset" class="hud-btn hud-btn-subtle" title="Restart Simulation">
-              <span class="btn-icon">↺</span>
-              <span class="btn-text">RESET</span>
+            <button id="btn-lab-carapace" class="lab-upgrade-btn">
+              <strong>CHITIN BIO-CARAPACE</strong>
+              <span>Increases Patient Zero &amp; Horde Caste armor durability against Snipers &amp; APCs</span>
+              <em class="lab-cost">LV.1 • UPGRADE (60 DNA)</em>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Center Dynamic Toast -->
-      <div id="toast-banner" class="toast-banner">HOST TRANSFERRED</div>
-
-      <!-- Stage Progression Banner (@designer & @artist) -->
-      <div id="stage-banner" class="stage-banner hidden">STAGE 1: OUTBREAK DAWN</div>
-
-      <!-- Quarantine Zone Overrun Banner (@designer & @artist) -->
-      <div id="quarantine-banner" class="quarantine-banner hidden">
-        <div class="quarantine-banner-title">🚨 QUARANTINE ZONE OVERRUN!</div>
-        <div class="quarantine-banner-sub">+1,500 PTS • CIVILIANS LIBERATED • TITAN VIRUS DROPPED</div>
-      </div>
-
-      <!-- Alone & Hunted Countdown Banner (@designer) -->
-      <div id="alone-warning" class="alone-warning hidden">
-        <div class="alone-header">
-          <span class="alone-badge">⚠️ DANGER</span>
-          <span class="alone-title">HORDE EXTERMINATED!</span>
-        </div>
-        <div class="alone-desc">ALONE &amp; HUNTED — INFECT A HUMAN BEFORE YOU ARE ELIMINATED!</div>
-        <div class="alone-bar-wrapper">
-          <div id="alone-bar-fill" class="alone-bar-fill"></div>
-        </div>
-        <div id="alone-countdown-text" class="alone-countdown-text">10.0s</div>
-      </div>
-
-      <!-- Zombie Safe Zone Deposit Channeling Widget (@designer & @artist) -->
-      <div id="safezone-channel-widget" class="safezone-channel-widget hidden" style="display: none !important;">
-        <div class="safezone-header">
-          <span class="safezone-badge">🏦 REFUGE</span>
-          <span class="safezone-title">DEPOSITING SWARM...</span>
-        </div>
-        <div class="safezone-desc">HOLD POSITION TO SECURE FOLLOWERS INTO THE VAULT</div>
-        <div class="safezone-bar-wrapper">
-          <div id="safezone-bar-fill" class="safezone-bar-fill"></div>
-        </div>
-        <div id="safezone-countdown-text" class="safezone-countdown-text">1.5s</div>
-      </div>
-
-      <!-- Last Stand Hazmat Decontamination Circular Countdown Widget (@designer & @artist) -->
-      <div id="mist-countdown-widget" class="mist-countdown-widget hidden">
-        <svg class="mist-ring-svg" viewBox="0 0 64 64">
-          <circle class="mist-ring-bg" cx="32" cy="32" r="26" />
-          <circle id="mist-ring-fill" class="mist-ring-fill" cx="32" cy="32" r="26" />
-        </svg>
-        <div class="mist-ring-center">
-          <span class="mist-icon">☣️</span>
-          <span id="mist-timer-text" class="mist-timer-text">3.5s</span>
-        </div>
-        <div class="mist-label">DECONTAMINATING</div>
-      </div>
-
-      <!-- Bottom HUD: Action Buttons Only (Frenzy Speed Burst) -->
-      <div class="hud-bottom">
-        <div class="action-btn-wrapper interactive-hud">
-          <button id="btn-frenzy" class="frenzy-btn" title="Frenzy Speed Burst (Space / Gamepad A)">
-            <svg class="cooldown-ring" viewBox="0 0 100 100">
-              <circle class="ring-bg" cx="50" cy="50" r="44" />
-              <circle id="cooldown-circle" class="ring-fill" cx="50" cy="50" r="44" />
-            </svg>
-            <div class="frenzy-btn-inner">
-              <div class="frenzy-icon">⚡</div>
-              <div class="frenzy-label">FRENZY</div>
+      <!-- BOTTOM-CENTER: Tactical Horde Command & Live Genome Evolution Dock -->
+      <footer class="hud-bottom-dock">
+        <div class="command-group">
+          <button id="cmd-frenzy" class="cmd-btn cmd-frenzy">
+            <div class="cmd-header">
+              <span class="cmd-key">SPACE</span>
+              <span class="cmd-title">FRENZY ROAR</span>
             </div>
+            <div class="cmd-bar-track">
+              <div id="bar-frenzy" class="cmd-bar-fill"></div>
+            </div>
+            <span id="status-frenzy" class="cmd-status">READY</span>
+          </button>
+
+          <button id="cmd-surge" class="cmd-btn cmd-surge">
+            <div class="cmd-header">
+              <span class="cmd-key">RMB / Q</span>
+              <span class="cmd-title">HORDE SURGE</span>
+            </div>
+            <div class="cmd-bar-track">
+              <div id="bar-surge" class="cmd-bar-fill"></div>
+            </div>
+            <span id="status-surge" class="cmd-status">AIM CURSOR &amp; SURGE</span>
+          </button>
+
+          <button id="cmd-formation" class="cmd-btn cmd-formation">
+            <div class="cmd-header">
+              <span class="cmd-key">E</span>
+              <span class="cmd-title">FORMATION</span>
+            </div>
+            <div id="label-formation" class="formation-badge">SWARM</div>
+            <span class="cmd-status">SWARM / SHIELD / PINCER</span>
           </button>
         </div>
-      </div>
-    </div>
 
-    <!-- Main Menu Overlay (STATE_MENU) -->
-    <div id="main-menu-overlay" class="menu-overlay">
-      <div class="menu-card">
-        <div class="hazard-stripes-bar"></div>
-        <div class="menu-slime-trim">
-          <svg viewBox="0 0 400 24" preserveAspectRatio="none" class="slime-drip-svg">
-            <path d="M0,0 L400,0 L400,6 C380,6 375,18 365,18 C355,18 350,6 330,6 C310,6 305,22 295,22 C285,22 280,6 250,6 C235,6 230,16 220,16 C210,16 205,6 180,6 C160,6 155,24 140,24 C125,24 120,6 95,6 C80,6 75,16 65,16 C55,16 50,6 25,6 C10,6 5,14 0,14 Z" fill="url(#slime-grad)"/>
-            <defs>
-              <linearGradient id="slime-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#15803d"/>
-                <stop offset="50%" stop-color="#4ade80"/>
-                <stop offset="100%" stop-color="#22c55e"/>
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
-        <div class="menu-logo-badge">☣️ CONTAGION SIMULATOR</div>
-        <h1 class="menu-title">ZOMBIE CHASE</h1>
-        <p class="menu-subtitle">INFECT THE CITY • BUILD THE SWARM • OVERRUN THE QUARANTINE</p>
+        <div class="dock-divider"></div>
 
-        <!-- Game Mode Selection -->
-        <div class="menu-mode-section">
-          <div class="mode-label">SELECT GAME MODE:</div>
-          <div class="mode-pills">
-            <button class="mode-pill active" data-mode="endless">
-              <span class="mode-name">ENDLESS</span>
-            </button>
-            <button class="mode-pill" data-mode="time_attack_2">
-              <span class="mode-name">TIME ATTACK: 2 MIN</span>
-            </button>
-            <button class="mode-pill" data-mode="time_attack_5">
-              <span class="mode-name">TIME ATTACK: 5 MIN</span>
-            </button>
-            <button class="mode-pill" data-mode="time_attack_10">
-              <span class="mode-name">TIME ATTACK: 10 MIN</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Difficulty Selection -->
-        <div class="menu-difficulty-section">
-          <div class="difficulty-label">SELECT OUTBREAK SEVERITY:</div>
-          <div class="difficulty-pills">
-            <button class="diff-pill" data-diff="casual">
-              <span class="diff-name">CASUAL</span>
-              <span class="diff-multiplier">1.0x</span>
-            </button>
-            <button class="diff-pill active" data-diff="outbreak">
-              <span class="diff-name">OUTBREAK</span>
-              <span class="diff-multiplier">1.5x</span>
-            </button>
-            <button class="diff-pill" data-diff="martial_law">
-              <span class="diff-name">MARTIAL LAW</span>
-              <span class="diff-multiplier">2.5x</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Action CTAs -->
-        <div class="menu-actions">
-          <button id="btn-start-game" class="menu-btn menu-btn-start">START OUTBREAK ▶</button>
-          <button id="btn-menu-lab" class="menu-btn menu-btn-lab">🧪 MUTATION LAB (<span id="menu-banked-zombies">0</span> 🧟)</button>
-          <button id="btn-menu-rules" class="menu-btn menu-btn-rules">📖 HOW TO PLAY / RULES</button>
-          <button id="btn-menu-leaderboard" class="menu-btn menu-btn-scores">🏆 HIGH SCORES</button>
-        </div>
-
-        <div class="menu-hint">
-          <span>DRAG OR WASD TO STEER • SPACE FOR FRENZY BURST • AVOID MOVING TRAFFIC</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- How-to-Play Rules Modal Overlay -->
-    <div id="rules-modal" class="game-rules-modal" style="display: none;">
-      <div class="rules-card">
-        <div class="hazard-stripes-bar"></div>
-        <div class="rules-header">
-          <div class="rules-badge">☣️ SURVIVAL PROTOCOL</div>
-          <h2 class="rules-title">HOW TO PLAY</h2>
-        </div>
-
-        <div class="rules-content">
-          <div class="rule-block">
-            <div class="rule-icon">🎮</div>
-            <div class="rule-text">
-              <div class="rule-heading">GAME MODES &amp; STEERING</div>
-              <p>Choose <strong>Time Attack</strong> (survive against a 2, 5, or 10-minute clock with score survival multipliers up to +100%) or <strong>Endless Outbreak</strong> (survive as long as possible against escalating military threats). Drag anywhere on screen or use WASD to steer Patient Zero. Tap <strong>FRENZY</strong> (Space) for a high-speed dash, and flick (E) to transfer leadership forward!</p>
+        <div class="evo-group">
+          <button id="evo-leaper" class="evo-btn evo-crimson">
+            <div class="evo-top">
+              <span class="cmd-key">1</span>
+              <span class="evo-title">+LEAPER GENE</span>
             </div>
-          </div>
+            <span class="evo-desc">Airborne Pounce Hunters</span>
+            <span class="evo-meta">LV.1 • 35 DNA</span>
+          </button>
 
-          <div class="rule-block">
-            <div class="rule-icon">🛡️</div>
-            <div class="rule-text">
-              <div class="rule-heading">SAFE ZONES &amp; MUTATION LAB</div>
-              <p>Locate glowing cyan <strong>Safe Zones</strong> throughout the city. Channel inside the beacon to safely deposit banked zombies into your persistent account! Spend banked zombies in the <strong>Mutation Lab</strong> for permanent rogue-lite enhancements like <em>Toughened Skin</em>, <em>Viral Velocity</em>, and <em>Magnetism Pulse</em>.</p>
+          <button id="evo-brute" class="evo-btn evo-amber">
+            <div class="evo-top">
+              <span class="cmd-key">2</span>
+              <span class="evo-title">+BRUTE CARAPACE</span>
             </div>
-          </div>
+            <span class="evo-desc">Breach Glass &amp; Flip Cars</span>
+            <span class="evo-meta">LV.1 • 45 DNA</span>
+          </button>
 
-          <div class="rule-block">
-            <div class="rule-icon">☣️</div>
-            <div class="rule-text">
-              <div class="rule-heading">THREATS &amp; ESCALATING ARSENAL</div>
-              <p>Watch out for <strong>Hazmat Disinfection Cones</strong>, elite <strong>Military Snipers</strong> targeting your vanguard, <strong>Attack Helicopters</strong> sweeping spotlights, and lethal <strong>Battle Tanks</strong> firing explosive shells at high panic levels!</p>
+          <button id="evo-spitter" class="evo-btn evo-lime">
+            <div class="evo-top">
+              <span class="cmd-key">3</span>
+              <span class="evo-title">+SPITTER ACID</span>
             </div>
-          </div>
+            <span class="evo-desc">Bio-Artillery &amp; Spore Cloud</span>
+            <span class="evo-meta">LV.1 • 40 DNA</span>
+          </button>
 
-          <div class="rule-block">
-            <div class="rule-icon">💥</div>
-            <div class="rule-text">
-              <div class="rule-heading">TITAN VIRUS &amp; DEMOLITION</div>
-              <p>Grab the colossal purple <strong>☣️ Titan Virus</strong> canister to transform Patient Zero into a giant armored behemoth! Demolish parked cars, smash military barricades, breach storefront windows, and crush roadblocks without taking damage!</p>
+          <button id="evo-alpha" class="evo-btn evo-emerald">
+            <div class="evo-top">
+              <span class="cmd-key">4</span>
+              <span class="evo-title">+ALPHA STRAIN</span>
             </div>
-          </div>
-
-          <div class="rule-block">
-            <div class="rule-icon">💀</div>
-            <div class="rule-text">
-              <div class="rule-heading">ALONE &amp; HUNTED / LAST STAND</div>
-              <p>If all flock zombies perish, you enter <strong>Alone &amp; Hunted</strong>: a high-tension 10-second survival countdown activates! You must infect a civilian or recruit a stray wanderer before time expires, or face total quarantine containment!</p>
-            </div>
-          </div>
+            <span class="evo-desc">Swarm Speed &amp; Overdrive</span>
+            <span class="evo-meta">LV.1 • 50 DNA</span>
+          </button>
         </div>
-
-        <button id="btn-close-rules" class="menu-btn menu-btn-start" style="margin-top: 16px;">CLOSE ✕</button>
-      </div>
-    </div>
-
-    <!-- Spray Danger Red Flash Overlay -->
-    <div id="spray-danger-overlay" class="spray-danger-overlay"></div>
-
-    <!-- Retro Arcade High Score Initials Entry Modal -->
-    <div id="initials-modal" class="arcade-modal" style="display: none;">
-      <div class="arcade-card">
-        <div class="arcade-header">
-          <div class="arcade-badge">🏆 TOP 5 RECORD</div>
-          <h2 class="arcade-title">NEW HIGH SCORE!</h2>
-          <div id="initials-score-preview" class="arcade-score-preview">
-            SCORE: <span id="initials-final-score" class="stat-highlight">0</span> | RANK <span id="initials-rank" class="rank-highlight">#1</span>
-          </div>
-        </div>
-
-        <!-- 3-Slot Tumbler -->
-        <div class="tumbler-container">
-          <div class="tumbler-slot active" data-slot="0">
-            <button class="tumbler-arrow tumbler-arrow-up" data-slot="0" data-dir="-1" title="Previous Character">▲</button>
-            <div class="tumbler-char" id="tumbler-char-0">A</div>
-            <button class="tumbler-arrow tumbler-arrow-down" data-slot="0" data-dir="1" title="Next Character">▼</button>
-          </div>
-          <div class="tumbler-slot" data-slot="1">
-            <button class="tumbler-arrow tumbler-arrow-up" data-slot="1" data-dir="-1" title="Previous Character">▲</button>
-            <div class="tumbler-char" id="tumbler-char-1">A</div>
-            <button class="tumbler-arrow tumbler-arrow-down" data-slot="1" data-dir="1" title="Next Character">▼</button>
-          </div>
-          <div class="tumbler-slot" data-slot="2">
-            <button class="tumbler-arrow tumbler-arrow-up" data-slot="2" data-dir="-1" title="Previous Character">▲</button>
-            <div class="tumbler-char" id="tumbler-char-2">A</div>
-            <button class="tumbler-arrow tumbler-arrow-down" data-slot="2" data-dir="1" title="Next Character">▼</button>
-          </div>
-        </div>
-
-        <!-- Touch Controls & Actions -->
-        <div class="arcade-actions">
-          <button id="btn-initials-prev" class="arcade-btn" title="Previous Slot">◀ PREV</button>
-          <button id="btn-initials-confirm" class="arcade-btn arcade-btn-confirm" title="Advance or Confirm">CONFIRM ▶</button>
-        </div>
-
-        <div class="arcade-hint">
-          <span>TOUCH ARROWS OR TYPE A-Z / 0-9 &amp; ENTER</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Game Over Quarantine & Extermination Modal -->
-    <div id="game-over-modal" class="game-over-modal" style="display: none;">
-      <div class="game-over-card">
-        <div class="hazard-stripes-bar hazard-stripes-crimson"></div>
-        <div class="game-over-icon">☣️</div>
-        <div id="game-over-reason" class="game-over-title">QUARANTINED!</div>
-        <div id="game-over-desc" class="game-over-desc">Patient Zero was fully decontaminated by Hazmat disinfectant spray.</div>
-        
-        <div class="game-over-stats">
-          <div>FINAL SCORE: <span id="game-over-score" class="stat-highlight">0</span></div>
-          <div>PEAK HORDE: <span id="game-over-horde" class="stat-highlight">1</span></div>
-          <div>SURVIVAL TIME: <span id="game-over-time" class="stat-highlight">00:00</span></div>
-        </div>
-
-        <!-- Leaderboard Table Section -->
-        <div class="leaderboard-section">
-          <div class="leaderboard-header">
-            <span class="leaderboard-title">🏆 TOP 5 LEADERBOARD</span>
-            <span id="leaderboard-diff-badge" class="diff-badge">OUTBREAK</span>
-          </div>
-          <div class="leaderboard-mode-tabs" id="gameover-mode-tabs">
-            <button class="lead-tab active" data-mode="endless">ENDLESS</button>
-            <button class="lead-tab" data-mode="time_attack_2">2 MIN</button>
-            <button class="lead-tab" data-mode="time_attack_5">5 MIN</button>
-            <button class="lead-tab" data-mode="time_attack_10">10 MIN</button>
-          </div>
-          <div class="leaderboard-table-wrapper">
-            <table class="leaderboard-table">
-              <thead>
-                <tr>
-                  <th>RK</th>
-                  <th>TAG</th>
-                  <th>SCORE</th>
-                  <th>PEAK</th>
-                  <th>TIME</th>
-                  <th>DATE</th>
-                </tr>
-              </thead>
-              <tbody id="leaderboard-rows">
-                <!-- Dynamically populated rows -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="game-over-actions">
-          <button id="btn-game-over-restart" class="hud-btn hud-btn-restart">🔄 PLAY AGAIN</button>
-          <button id="btn-game-over-menu" class="hud-btn hud-btn-menu">🏠 MAIN MENU</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Standalone Leaderboard Modal (Viewable Anytime via HUD) -->
-    <div id="standalone-leaderboard-modal" class="game-over-modal" style="display: none;">
-      <div class="game-over-card">
-        <div class="game-over-icon">🏆</div>
-        <div class="game-over-title" style="color: #facc15;">HALL OF INFAMY</div>
-        <div class="game-over-desc">Top contagion records across game modes.</div>
-        
-        <div class="leaderboard-section">
-          <div class="leaderboard-header">
-            <span class="leaderboard-title">TOP 5 RECORD CARRIERS</span>
-            <span id="standalone-diff-badge" class="diff-badge">OUTBREAK</span>
-          </div>
-          <div class="leaderboard-mode-tabs" id="standalone-mode-tabs">
-            <button class="lead-tab active" data-mode="endless">ENDLESS</button>
-            <button class="lead-tab" data-mode="time_attack_2">2 MIN</button>
-            <button class="lead-tab" data-mode="time_attack_5">5 MIN</button>
-            <button class="lead-tab" data-mode="time_attack_10">10 MIN</button>
-          </div>
-          <div class="leaderboard-table-wrapper">
-            <table class="leaderboard-table">
-              <thead>
-                <tr>
-                  <th>RK</th>
-                  <th>TAG</th>
-                  <th>SCORE</th>
-                  <th>PEAK</th>
-                  <th>TIME</th>
-                  <th>DATE</th>
-                </tr>
-              </thead>
-              <tbody id="standalone-leaderboard-rows">
-                <!-- Dynamically populated rows -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <button id="btn-close-leaderboard" class="hud-btn" style="width: 100%; margin-top: 14px; background: rgba(56, 189, 248, 0.25); border-color: #38bdf8;">CLOSE ✕</button>
-      </div>
-    </div>
-
-    <!-- Mutation Lab Meta-Progression Modal -->
-    <div id="lab-modal" class="game-over-modal" style="display: none;">
-      <div class="lab-card">
-        <div class="hazard-stripes-bar"></div>
-        <div class="lab-header">
-          <div class="lab-badge">🧪 PERMANENT SPECIMEN RESEARCH</div>
-          <h2 class="lab-title">MUTATION LAB</h2>
-          <div class="lab-bank-counter">
-            VAULT BALANCE: <span id="lab-banked-count" class="bank-highlight">0</span> 🧟 BANKED
-          </div>
-          <p class="lab-subtitle">Spend banked zombies to unlock enhancements. Toggle them ON/OFF before your next run.</p>
-        </div>
-
-        <div class="lab-grid" id="lab-enhancements-grid">
-          <!-- Dynamically populated enhancement cards -->
-        </div>
-
-        <div class="lab-actions">
-          <button id="btn-close-lab-footer" class="menu-btn menu-btn-start" style="width: 100%;">APPLY &amp; RETURN ▶</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Roguelite Mutation Modal (Pauses game on Quarantine Zone overrun) -->
-    <div id="mutation-modal" class="game-over-modal" style="display: none;">
-      <div class="mutation-card-container">
-        <div class="mutation-modal-header">
-          <div class="mutation-modal-badge">🧬 ROGUELITE UPGRADE</div>
-          <h2 class="mutation-modal-title">MUTATION UNLOCKED!</h2>
-          <p class="mutation-modal-subtitle">CHOOSE ONE PERMANENT RUN ADAPTATION:</p>
-        </div>
-
-        <div class="mutation-options-grid">
-          <div class="mutation-card" id="mutation-acidicBlood" data-mutation="acidicBlood" tabindex="0">
-            <div class="mutation-card-icon">🧪</div>
-            <div class="mutation-card-title">ACIDIC BLOOD</div>
-            <div class="mutation-card-desc">Slain follower zombies leave a toxic green puddle that damages and stuns Hazmats and Military for 3s.</div>
-            <div class="mutation-card-badge">CROWD CONTROL</div>
-          </div>
-
-          <div class="mutation-card" id="mutation-bruteBone" data-mutation="bruteBone" tabindex="0">
-            <div class="mutation-card-icon">🦴</div>
-            <div class="mutation-card-title">BRUTE BONE</div>
-            <div class="mutation-card-desc">Dense skeletal reinforcement increases follower zombie resistance to Hazmat spray mist by 40%.</div>
-            <div class="mutation-card-badge">DEFENSE BUFF</div>
-          </div>
-
-          <div class="mutation-card" id="mutation-hyperInfectious" data-mutation="hyperInfectious" tabindex="0">
-            <div class="mutation-card-icon">☣️</div>
-            <div class="mutation-card-title">HYPER-INFECTIOUS</div>
-            <div class="mutation-card-desc">Virulent airborne pathogens expand stray zombie and civilian infection hitboxes by +25%.</div>
-            <div class="mutation-card-badge">SWARM EXPANSION</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- In-Game Pause Modal Overlay -->
-    <div id="pause-modal" class="game-over-modal pause-modal" style="display: none;">
-      <div class="pause-card">
-        <div class="hazard-stripes-bar"></div>
-        <div class="pause-header">
-          <div class="pause-badge">⏸️ SIMULATION PAUSED</div>
-          <h2 class="pause-title">GAME PAUSED</h2>
-          <div class="pause-sub">CURRENT MODE: <span id="pause-mode-badge" class="stat-highlight">TIME ATTACK</span> | SEVERITY: <span id="pause-diff-badge" class="diff-badge">OUTBREAK</span></div>
-        </div>
-        <div class="pause-actions">
-          <button id="btn-pause-resume" class="menu-btn menu-btn-start">▶ RESUME (ESC / P)</button>
-          <button id="btn-pause-restart" class="menu-btn menu-btn-scores">🔄 RESTART RUN (R)</button>
-          <button id="btn-pause-lab" class="menu-btn menu-btn-lab">🧪 MUTATION LAB</button>
-          <button id="btn-pause-camera" class="menu-btn menu-btn-rules">🎥 CAMERA: <span id="pause-camera-label">FIXED NORTH-UP</span></button>
-          <button id="btn-pause-menu" class="menu-btn" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #fca5a5;">🏠 QUIT TO MAIN MENU (Q)</button>
-        </div>
-      </div>
+      </footer>
     </div>
 
     <script type="module" src="/src/main.js"></script>
