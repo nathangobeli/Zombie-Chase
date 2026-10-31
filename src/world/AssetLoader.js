@@ -292,7 +292,7 @@ export class AssetLoader {
             });
 
             if (mesh) {
-              const geom = mesh.geometry.clone();
+              const geom = this._stripDegenerateTriangles(mesh.geometry.clone());
               geom.computeBoundingBox();
 
               loadedByIndex[idx] = {
@@ -315,5 +315,64 @@ export class AssetLoader {
     await Promise.all(promises);
     this.buildingModels = loadedByIndex.filter(Boolean);
     console.log(`[AssetLoader] Loaded ${this.buildingModels.length} Kenney building models`);
+  }
+
+  /**
+   * Removes degenerate zero-area triangles from a BufferGeometry so computeVertexNormals()
+   * never produces zero-length (0, 0, 0) normals that turn into NaN in fragment shaders / UnrealBloomPass.
+   */
+  _stripDegenerateTriangles(geom) {
+    const nonIdx = geom.index ? geom.toNonIndexed() : geom.clone();
+    const pos = nonIdx.attributes.position;
+    if (!pos) return nonIdx;
+
+    const triCount = Math.floor(pos.count / 3);
+    const validTris = [];
+    const p0 = new THREE.Vector3();
+    const p1 = new THREE.Vector3();
+    const p2 = new THREE.Vector3();
+    const e1 = new THREE.Vector3();
+    const e2 = new THREE.Vector3();
+    const cross = new THREE.Vector3();
+
+    for (let t = 0; t < triCount; t++) {
+      const i0 = t * 3;
+      const i1 = t * 3 + 1;
+      const i2 = t * 3 + 2;
+      p0.fromBufferAttribute(pos, i0);
+      p1.fromBufferAttribute(pos, i1);
+      p2.fromBufferAttribute(pos, i2);
+      e1.subVectors(p1, p0);
+      e2.subVectors(p2, p0);
+      cross.crossVectors(e1, e2);
+      if (cross.lengthSq() > 1e-12) {
+        validTris.push(t);
+      }
+    }
+
+    if (validTris.length === triCount) {
+      return nonIdx;
+    }
+
+    const cleanGeom = new THREE.BufferGeometry();
+    const newCount = validTris.length * 3;
+    for (const [attrName, attr] of Object.entries(nonIdx.attributes)) {
+      if (attrName === 'tangent') continue;
+      const itemSize = attr.itemSize;
+      const ArrayCtor = attr.array.constructor;
+      const newArr = new ArrayCtor(newCount * itemSize);
+      for (let k = 0; k < validTris.length; k++) {
+        const srcTri = validTris[k];
+        for (let v = 0; v < 3; v++) {
+          const srcIdx = (srcTri * 3 + v) * itemSize;
+          const dstIdx = (k * 3 + v) * itemSize;
+          for (let c = 0; c < itemSize; c++) {
+            newArr[dstIdx + c] = attr.array[srcIdx + c];
+          }
+        }
+      }
+      cleanGeom.setAttribute(attrName, new THREE.BufferAttribute(newArr, itemSize, attr.normalized));
+    }
+    return cleanGeom;
   }
 }

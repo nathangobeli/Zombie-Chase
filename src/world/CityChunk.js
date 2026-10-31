@@ -1224,6 +1224,7 @@ export class CityChunk {
           delete geom.attributes.tangent;
         }
         geom.computeVertexNormals();
+        _sanitizeNormals(geom);
         geom.computeBoundingBox();
         geom.computeBoundingSphere();
 
@@ -2326,6 +2327,7 @@ function safeMergeGeometries(geoms, useVertexColors = false, keepUV = false) {
     if (!g.attributes.normal) {
       g.computeVertexNormals();
     }
+    _sanitizeNormals(g);
     if (useVertexColors) {
       if (!g.attributes.color) {
         _tagGeomColor(g, new THREE.Color(0xffffff));
@@ -2343,5 +2345,33 @@ function safeMergeGeometries(geoms, useVertexColors = false, keepUV = false) {
     }
     processed.push(g);
   }
-  return BufferGeometryUtils.mergeGeometries(processed);
+  const merged = BufferGeometryUtils.mergeGeometries(processed);
+  if (merged) {
+    _sanitizeNormals(merged);
+  }
+  return merged;
+}
+
+/**
+ * Ensures no vertex normal has zero length (which becomes NaN after normalize(vNormal) in GLSL
+ * and poisons UnrealBloomPass into blacking out the screen).
+ */
+function _sanitizeNormals(geom) {
+  if (!geom || !geom.attributes || !geom.attributes.normal) return;
+  const norm = geom.attributes.normal;
+  const count = norm.count;
+  let fixed = false;
+  for (let i = 0; i < count; i++) {
+    const nx = norm.getX(i);
+    const ny = norm.getY(i);
+    const nz = norm.getZ(i);
+    const lenSq = nx * nx + ny * ny + nz * nz;
+    if (!Number.isFinite(lenSq) || lenSq < 1e-6) {
+      norm.setXYZ(i, 0, 1, 0);
+      fixed = true;
+    }
+  }
+  if (fixed) {
+    norm.needsUpdate = true;
+  }
 }

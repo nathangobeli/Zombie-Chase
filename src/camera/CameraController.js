@@ -140,7 +140,8 @@ export class CameraController {
     }
 
     // 5. Building Collision & Near-Plane Clipping Prevention
-    // Check if camera position intersects any static building obstacle
+    // Smoothly elevate camera when horizontally over a tall building footprint to avoid sudden height snaps
+    let targetRoofY = 0;
     if (spatialGrid && spatialGrid.obstacles) {
       const obs = spatialGrid.obstacles;
       for (let i = 0; i < obs.length; i++) {
@@ -152,13 +153,16 @@ export class CameraController {
         const bMaxZ = b.maxZ + 1.2;
 
         if (camX >= bMinX && camX <= bMaxX && camZ >= bMinZ && camZ <= bMaxZ) {
-          // Camera is horizontally over/inside building footprint: elevate above roof
-          const buildingRoofY = (b.height || 23.5) + 3.0;
-          if (camY < buildingRoofY) {
-            camY = Math.max(camY, buildingRoofY);
+          const buildingRoofY = (b.height || 18.0) + 2.5;
+          if (buildingRoofY > targetRoofY) {
+            targetRoofY = buildingRoofY;
           }
         }
       }
+    }
+    this._smoothedRoofY = (this._smoothedRoofY || 0) + (targetRoofY - (this._smoothedRoofY || 0)) * zoomAlpha;
+    if (camY < this._smoothedRoofY) {
+      camY = this._smoothedRoofY;
     }
 
     this.camera.position.set(camX, camY, camZ);
